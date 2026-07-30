@@ -21,7 +21,6 @@ func NewServer() *Server {
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
-		EnableCompression: true,
 	}}
 
 }
@@ -41,17 +40,12 @@ func (s *Server) Run(c *gin.Context) {
 		return
 	}
 
-	if err = conn.SetReadDeadline(time.Now().Add(time.Second * 30)); err != nil {
-		log.Println(err)
-		return
-	}
-
 	handle(conn)
 }
 
 func handle(conn *websocket.Conn) {
 
-	msgChan := make(chan []byte)
+	msgChan := make(chan []byte, 256)
 	defer close(msgChan)
 	defer conn.Close()
 
@@ -63,6 +57,7 @@ func handle(conn *websocket.Conn) {
 		log.Println(err)
 		return
 	}
+	conn.SetReadLimit(1024)
 
 	go func() {
 
@@ -73,28 +68,28 @@ func handle(conn *websocket.Conn) {
 			case msg, ok := <-msgChan:
 
 				if !ok {
-					break
+					return
 				}
 
 				if err := conn.SetWriteDeadline(time.Now().Add(time.Second * 30)); err != nil {
 					log.Println(err)
-					break
+					return
 				}
 
 				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 					log.Println(err)
-					break
+					return
 				}
 
 			case <-ticker.C:
 				if err := conn.SetWriteDeadline(time.Now().Add(time.Second * 30)); err != nil {
 					log.Println(err)
-					break
+					return
 				}
 
 				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 					log.Println(err)
-					break
+					return
 				}
 			}
 		}
