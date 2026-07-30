@@ -1,8 +1,9 @@
 package client
 
 import (
+	"bufio"
 	"log"
-	"net/http"
+	"os"
 
 	"github.com/gorilla/websocket"
 )
@@ -14,20 +15,38 @@ func NewClient() *Client {
 	return &Client{}
 }
 
-func (c *Client) StartChat() error {
+func (c *Client) StartChat() {
 
-	dialer := websocket.Dialer{}
-	header := http.Header{}
-	header.Set("Origin", "client")
-
-	conn, resp, err := dialer.Dial("localhost:8082/ws", header)
+	conn, _, err := websocket.DefaultDialer.Dial("ws://localhost:8082/ws", nil)
 	if err != nil {
-		return err
+		log.Println(err)
+		return
 	}
-	log.Println(resp.StatusCode)
+	defer conn.Close()
 
-	if err = conn.WriteMessage(websocket.TextMessage, []byte("Hello world")); err != nil {
-		return err
+	c.handle(conn)
+}
+
+func (c *Client) handle(conn *websocket.Conn) {
+
+	for {
+
+		inputChan := make(chan string)
+		go c.clientInput(inputChan)
+
+		select {
+		case input := <-inputChan:
+			if err := conn.WriteMessage(websocket.TextMessage, []byte(input)); err != nil {
+				log.Println(err)
+				return
+			}
+		}
 	}
-	return nil
+}
+
+func (c *Client) clientInput(inputChan chan string) {
+
+	reader := bufio.NewReader(os.Stdin)
+	msg, _ := reader.ReadString('\n')
+	inputChan <- msg
 }
