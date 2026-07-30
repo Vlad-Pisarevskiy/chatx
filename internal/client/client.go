@@ -2,8 +2,10 @@ package client
 
 import (
 	"bufio"
+	"io"
 	"log"
 	"os"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -29,10 +31,14 @@ func (c *Client) StartChat() {
 
 func (c *Client) handle(conn *websocket.Conn) {
 
-	for {
+	conn.SetPingHandler(func(appData string) error {
+		return conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(time.Second))
+	})
 
-		inputChan := make(chan string)
-		go c.clientInput(inputChan)
+	inputChan := make(chan string)
+	go c.clientInput(inputChan)
+
+	for {
 
 		select {
 		case input := <-inputChan:
@@ -47,6 +53,11 @@ func (c *Client) handle(conn *websocket.Conn) {
 func (c *Client) clientInput(inputChan chan string) {
 
 	reader := bufio.NewReader(os.Stdin)
-	msg, _ := reader.ReadString('\n')
-	inputChan <- msg
+	for {
+		msg, err := reader.ReadString('\n')
+		if err == io.EOF {
+			continue
+		}
+		inputChan <- msg
+	}
 }

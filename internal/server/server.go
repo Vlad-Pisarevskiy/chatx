@@ -28,7 +28,15 @@ func NewServer() *Server {
 func (s *Server) GetRouter() *gin.Engine {
 
 	r := gin.Default()
-	r.Handle("GET", "/ws", s.Run)
+
+	auth := r.Group("/auth")
+	{
+		auth.POST("/register")
+		auth.POST("/login")
+	}
+
+	r.GET("/ws", s.Run).Use()
+
 	return r
 }
 

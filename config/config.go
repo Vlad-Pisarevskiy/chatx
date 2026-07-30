@@ -13,7 +13,7 @@ func InitConfig() {
 	values, err = godotenv.Read(".env")
 
 	if err != nil {
-		log.Fatalf("error to read config: %e", err)
+		log.Fatalf("error to read config: %v", err)
 	}
 }
 
