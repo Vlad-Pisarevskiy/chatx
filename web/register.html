@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Регистрация — Кружок</title>
+<style>
+  :root {
+    --color-bg: #f3f2f2;
+    --color-surface: #eae9e9;
+    --color-text: #201e1d;
+    --color-accent: #0088b0;
+    --color-accent-600: #1186ac;
+    --color-accent-700: #006786;
+    --color-danger: #c2334d;
+    --color-ok: #2e7d4f;
+    --color-warn: #edbb00;
+    --color-divider: color-mix(in srgb, #201e1d 16%, transparent);
+    --color-muted: color-mix(in srgb, #201e1d 65%, transparent);
+
+    --radius-sm: 1px;
+    --radius-md: 2px;
+    --radius-lg: 4px;
+
+    --space-1: 5px;
+    --space-2: 10px;
+    --space-3: 15px;
+    --space-4: 20px;
+    --space-6: 30px;
+    --space-8: 40px;
+
+    --shadow-md: 0 3px 10px color-mix(in srgb, #2d2b2b 16%, transparent);
+
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-heading-weight: 600;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    min-height: 100vh;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.45;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-4);
+  }
+
+  .layout {
+    width: 100%;
+    max-width: 940px;
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: var(--space-8);
+    align-items: center;
+  }
+
+  @media (max-width: 800px) {
+    .layout { grid-template-columns: 1fr; gap: var(--space-6); max-width: 420px; }
+  }
+
+  /* ── левая колонка ─────────────────────────────── */
+
+  .brand h1 {
+    font-size: 58px;
+    line-height: 0.96;
+    letter-spacing: -0.025em;
+    font-weight: var(--font-heading-weight);
+  }
+
+  .brand .tagline {
+    margin-top: var(--space-2);
+    font-size: 17px;
+    color: var(--color-muted);
+  }
+
+  .brand .promise {
+    margin-top: var(--space-6);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--color-divider);
+    font-size: 14px;
+    color: var(--color-muted);
+    max-width: 34ch;
+  }
+
+  @media (max-width: 800px) {
+    .brand h1 { font-size: 42px; }
+    .brand .promise { display: none; }
+  }
+
+  /* ── карточка формы ────────────────────────────── */
+
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    background: var(--color-surface);
+    border: 1px solid var(--color-divider);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+  }
+
+  .card h2 {
+    font-size: 20px;
+    font-weight: var(--font-heading-weight);
+  }
+
+  .card .lead {
+    font-size: 14px;
+    color: var(--color-muted);
+    margin-top: calc(var(--space-1) * -1);
+  }
+
+  .field { display: flex; flex-direction: column; gap: var(--space-1); }
+
+  .field label {
+    font-size: 13px;
+    font-weight: var(--font-heading-weight);
+  }
+
+  .input {
+    width: 100%;
+    min-height: 36px;
+    padding: 6px 10px;
+    font: inherit;
+    font-size: 14px;
+    color: var(--color-text);
+    caret-color: var(--color-accent);
+    background: var(--color-bg);
+    border: 1px solid var(--color-divider);
+    border-radius: var(--radius-md);
+  }
+  .input::placeholder { color: var(--color-muted); opacity: 1; }
+  .input:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
+  .input:focus-visible { border-color: var(--color-accent); outline: 1px solid var(--color-accent); outline-offset: 0; }
+  .input[aria-invalid="true"] { border-color: var(--color-danger); }
+
+  .with-toggle { position: relative; }
+  .with-toggle .input { padding-right: 74px; }
+
+  .toggle {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    background: transparent;
+    border: 0;
+    padding: var(--space-1);
+    font: inherit;
+    font-size: 13px;
+    color: var(--color-accent);
+    cursor: pointer;
+    border-radius: var(--radius-md);
+  }
+  .toggle:hover { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+
+  .hint { font-size: 12px; color: var(--color-muted); min-height: 16px; }
+  .hint[data-level="weak"]   { color: var(--color-danger); }
+  .hint[data-level="medium"] { color: #8a6d00; }
+  .hint[data-level="strong"] { color: var(--color-ok); }
+
+  .error { font-size: 12px; color: var(--color-danger); min-height: 16px; }
+
+  .agree {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .agree input {
+    width: 17px;
+    height: 17px;
+    margin: 3px 0 0;
+    accent-color: var(--color-accent);
+    cursor: pointer;
+    flex: none;
+  }
+  .agree a { color: var(--color-accent); }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 38px;
+    padding: var(--space-2) calc(var(--space-3) * 1.2);
+    font: inherit;
+    font-size: 14px;
+    font-weight: var(--font-heading-weight);
+    line-height: 1.2;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+  }
+  .btn-primary { background: var(--color-accent); color: var(--color-bg); }
+  .btn-primary:hover:not(:disabled) { background: var(--color-accent-600); }
+  .btn-primary:active:not(:disabled) { background: var(--color-accent-700); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn-block { width: 100%; }
+
+  .form-error {
+    display: none;
+    padding: var(--space-2);
+    font-size: 13px;
+    color: var(--color-danger);
+    background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-danger) 35%, transparent);
+    border-radius: var(--radius-md);
+  }
+  .form-error.shown { display: block; }
+
+  .foot {
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--color-divider);
+    font-size: 14px;
+    color: var(--color-muted);
+    text-align: center;
+  }
+  .foot a { color: var(--color-accent); font-weight: var(--font-heading-weight); }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <section class="brand">
+    <h1>Кружок</h1>
+    <p class="tagline">небольшой мессенджер для своих</p>
+    <p class="promise">Ни рекламы, ни рекомендаций — только те, кого вы позвали.</p>
+  </section>
+
+  <main class="card">
+    <h2>Привет. Давайте знакомиться</h2>
+    <p class="lead">Четыре поля — минута времени. Логин потом увидят друзья, почту — только мы.</p>
+
+    <div class="form-error" id="form-error" role="alert" aria-live="polite"></div>
+
+    <form id="register-form" novalidate>
+
+      <div class="field">
+        <label for="reg-mail">Почта</label>
+        <input class="input" id="reg-mail" name="email" type="email"
+               autocomplete="email" placeholder="you@example.com">
+        <div class="error" id="err-mail"></div>
+      </div>
+
+      <div class="field">
+        <label for="reg-login">Логин</label>
+        <input class="input" id="reg-login" name="username" type="text"
+               autocomplete="username" placeholder="@nadya" maxlength="21">
+        <div class="error" id="err-login"></div>
+      </div>
+
+      <div class="field">
+        <label for="reg-pw">Пароль</label>
+        <div class="with-toggle">
+          <input class="input" id="reg-pw" name="password" type="password"
+                 autocomplete="new-password" placeholder="Минимум 8 символов">
+          <button class="toggle" type="button" id="pw-toggle" aria-controls="reg-pw">Показать</button>
+        </div>
+        <div class="hint" id="pw-strength"></div>
+        <div class="error" id="err-pw"></div>
+      </div>
+
+      <div class="field">
+        <label for="reg-pw2">Пароль ещё раз</label>
+        <input class="input" id="reg-pw2" type="password"
+               autocomplete="new-password" placeholder="Чтобы не потерялся">
+        <div class="error" id="err-pw2"></div>
+      </div>
+
+      <label class="agree">
+        <input type="checkbox" id="reg-agree">
+        <span>Согласен с <a href="/terms">условиями</a> и <a href="/privacy">политикой конфиденциальности</a></span>
+      </label>
+      <div class="error" id="err-agree"></div>
+
+      <button class="btn btn-primary btn-block" type="submit" id="submit-btn">Создать аккаунт</button>
+    </form>
+
+    <p class="foot">Уже есть аккаунт? <a href="/login">Войти</a></p>
+  </main>
+
+</div>
+
+<script>
+// Контракт с бэкендом:
+//   POST /api/register  {email, username, password}
+//   201 — создан
+//   400 {error, field?} — ошибка валидации
+//   409 {error, field: "username" | "email"} — уже занято
+"use strict";
+
+const form = document.getElementById("register-form");
+const submitBtn = document.getElementById("submit-btn");
+const formError = document.getElementById("form-error");
+
+const fields = {
+  email:    { input: document.getElementById("reg-mail"),  error: document.getElementById("err-mail") },
+  username: { input: document.getElementById("reg-login"), error: document.getElementById("err-login") },
+  password: { input: document.getElementById("reg-pw"),    error: document.getElementById("err-pw") },
+  password2:{ input: document.getElementById("reg-pw2"),   error: document.getElementById("err-pw2") },
+  agree:    { input: document.getElementById("reg-agree"), error: document.getElementById("err-agree") },
+};
+
+// ── показать/скрыть пароль ────────────────────────
+
+const pwToggle = document.getElementById("pw-toggle");
+pwToggle.addEventListener("click", () => {
+  const pw = fields.password.input;
+  const hidden = pw.type === "password";
+  pw.type = hidden ? "text" : "password";
+  pwToggle.textContent = hidden ? "Скрыть" : "Показать";
+});
+
+// ── индикатор надёжности ──────────────────────────
+
+const strengthBox = document.getElementById("pw-strength");
+fields.password.input.addEventListener("input", () => {
+  const v = fields.password.input.value;
+  if (!v) { strengthBox.textContent = ""; strengthBox.removeAttribute("data-level"); return; }
+  let score = 0;
+  if (v.length >= 8) score++;
+  if (v.length >= 12) score++;
+  if (/[a-zа-я]/.test(v) && /[A-ZА-Я]/.test(v)) score++;
+  if (/\d/.test(v)) score++;
+  if (/[^\w\s]/.test(v)) score++;
+  const level = score <= 2 ? "weak" : score <= 3 ? "medium" : "strong";
+  const label = { weak: "слабый", medium: "средний", strong: "хороший" }[level];
+  strengthBox.dataset.level = level;
+  strengthBox.textContent = "Надёжность: " + label;
+});
+
+// ── валидация ─────────────────────────────────────
+
+function clearErrors() {
+  formError.classList.remove("shown");
+  formError.textContent = "";
+  for (const f of Object.values(fields)) {
+    f.error.textContent = "";
+    f.input.removeAttribute("aria-invalid");
+  }
+}
+
+function setError(name, message) {
+  const f = fields[name];
+  if (!f) { formError.textContent = message; formError.classList.add("shown"); return; }
+  f.error.textContent = message;
+  f.input.setAttribute("aria-invalid", "true");
+}
+
+// Логин вводят как «@nadya», на сервер уходит «nadya».
+function normalizeUsername(raw) {
+  return raw.trim().replace(/^@+/, "");
+}
+
+function validate(values) {
+  const errors = {};
+
+  if (!values.email) errors.email = "Укажите почту";
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) errors.email = "Похоже, здесь опечатка";
+
+  if (!values.username) errors.username = "Придумайте логин";
+  else if (values.username.length < 3) errors.username = "Минимум 3 символа";
+  else if (values.username.length > 20) errors.username = "Не длиннее 20 символов";
+  else if (!/^[a-zA-Z0-9_]+$/.test(values.username)) errors.username = "Только латиница, цифры и _";
+
+  if (!values.password) errors.password = "Придумайте пароль";
+  else if (values.password.length < 8) errors.password = "Минимум 8 символов";
+  else if (new TextEncoder().encode(values.password).length > 72) errors.password = "Слишком длинный пароль";
+
+  if (!values.password2) errors.password2 = "Повторите пароль";
+  else if (values.password2 !== values.password) errors.password2 = "Пароли не совпадают";
+
+  if (!values.agree) errors.agree = "Без согласия не получится";
+
+  return errors;
+}
+
+// ── отправка ──────────────────────────────────────
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  clearErrors();
+
+  const values = {
+    email: fields.email.input.value.trim(),
+    username: normalizeUsername(fields.username.input.value),
+    password: fields.password.input.value,
+    password2: fields.password2.input.value,
+    agree: fields.agree.input.checked,
+  };
+
+  const errors = validate(values);
+  if (Object.keys(errors).length > 0) {
+    for (const [name, message] of Object.entries(errors)) setError(name, message);
+    const first = fields[Object.keys(errors)[0]].input;
+    first.focus();
+    return;
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Создаём…";
+
+  try {
+    const response = await fetch("/api/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: values.email,
+        username: values.username,
+        password: values.password,
+      }),
+    });
+
+    if (response.status === 201) {
+      window.location.href = "/login";
+      return;
+    }
+
+    let body = {};
+    try { body = await response.json(); } catch (_) { /* сервер ответил не-JSON */ }
+
+    if (response.status === 409 || response.status === 400) {
+      setError(body.field, body.error || "Проверьте введённые данные");
+    } else {
+      formError.textContent = "Сервер ответил ошибкой " + response.status + ". Попробуйте ещё раз.";
+      formError.classList.add("shown");
+    }
+  } catch (_) {
+    formError.textContent = "Не удалось связаться с сервером. Проверьте соединение.";
+    formError.classList.add("shown");
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Создать аккаунт";
+  }
+});
+</script>
+
+</body>
+</html>
