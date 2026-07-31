@@ -9,6 +9,8 @@ import (
 
 func main() {
 
+	config.InitConfig()
+
 	srv := server.NewServer()
 	r := srv.GetRouter()
 	if err := r.Run(fmt.Sprintf("%s:%s", config.Host(), config.Port())); err != nil {

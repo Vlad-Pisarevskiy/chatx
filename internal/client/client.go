@@ -19,7 +19,7 @@ func NewClient() *Client {
 
 func (c *Client) StartChat() {
 
-	conn, _, err := websocket.DefaultDialer.Dial("ws://localhost:8082/ws", nil)
+	conn, _, err := websocket.DefaultDialer.Dial("ws://localhost:8001/ws", nil)
 	if err != nil {
 		log.Println(err)
 		return

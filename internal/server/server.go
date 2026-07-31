@@ -48,17 +48,13 @@ func (s *Server) Run(c *gin.Context) {
 		return
 	}
 
-	handle(conn)
+	s.handle(conn)
 }
 
-func handle(conn *websocket.Conn) {
+func (s *Server) handle(conn *websocket.Conn) {
 
 	msgChan := make(chan []byte, 256)
 	defer close(msgChan)
-	defer conn.Close()
-
-	ticker := time.NewTicker(time.Second * 25)
-	defer ticker.Stop()
 
 	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(time.Second * 20)) })
 	if err := conn.SetReadDeadline(time.Now().Add(time.Second * 30)); err != nil {
@@ -67,41 +63,14 @@ func handle(conn *websocket.Conn) {
 	}
 	conn.SetReadLimit(1024)
 
-	go func() {
+	go s.writer(conn, msgChan)
 
-		defer conn.Close()
+	s.reader(conn, msgChan)
+}
 
-		for {
-			select {
-			case msg, ok := <-msgChan:
+func (s *Server) reader(conn *websocket.Conn, msgChan chan []byte) {
 
-				if !ok {
-					return
-				}
-
-				if err := conn.SetWriteDeadline(time.Now().Add(time.Second * 30)); err != nil {
-					log.Println(err)
-					return
-				}
-
-				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-					log.Println(err)
-					return
-				}
-
-			case <-ticker.C:
-				if err := conn.SetWriteDeadline(time.Now().Add(time.Second * 30)); err != nil {
-					log.Println(err)
-					return
-				}
-
-				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-					log.Println(err)
-					return
-				}
-			}
-		}
-	}()
+	defer conn.Close()
 
 	for {
 
@@ -118,6 +87,44 @@ func handle(conn *websocket.Conn) {
 		if err = conn.SetReadDeadline(time.Now().Add(time.Second * 30)); err != nil {
 			log.Println(err)
 			return
+		}
+	}
+}
+
+func (s *Server) writer(conn *websocket.Conn, msgChan chan []byte) {
+
+	ticker := time.NewTicker(time.Second * 25)
+	defer ticker.Stop()
+	defer conn.Close()
+
+	for {
+		select {
+		case msg, ok := <-msgChan:
+
+			if !ok {
+				return
+			}
+
+			if err := conn.SetWriteDeadline(time.Now().Add(time.Second * 30)); err != nil {
+				log.Println(err)
+				return
+			}
+
+			if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				log.Println(err)
+				return
+			}
+
+		case <-ticker.C:
+			if err := conn.SetWriteDeadline(time.Now().Add(time.Second * 30)); err != nil {
+				log.Println(err)
+				return
+			}
+
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Println(err)
+				return
+			}
 		}
 	}
 }
