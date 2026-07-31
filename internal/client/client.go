@@ -2,6 +2,7 @@ package client
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -17,9 +18,9 @@ func NewClient() *Client {
 	return &Client{}
 }
 
-func (c *Client) StartChat() {
+func (c *Client) StartChat(addr string) {
 
-	conn, _, err := websocket.DefaultDialer.Dial("ws://localhost:8001/ws", nil)
+	conn, _, err := websocket.DefaultDialer.Dial(fmt.Sprintf("ws://%s/ws", addr), nil)
 	if err != nil {
 		log.Println(err)
 		return
