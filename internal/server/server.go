@@ -22,7 +22,6 @@ func NewServer() *Server {
 			return true
 		},
 	}}
-
 }
 
 func (s *Server) GetRouter() *gin.Engine {

@@ -8,7 +8,9 @@ import (
 func main() {
 
 	config.InitConfig()
-	addr := config.Host() + config.Port()
+
+	addr := config.Host() + ":" + config.Port()
 	clt := client.NewClient()
+
 	clt.StartChat(addr)
 }

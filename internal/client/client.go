@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	cr "github.com/fatih/color"
 	"github.com/gorilla/websocket"
 )
 
@@ -38,9 +39,9 @@ func (c *Client) handle(conn *websocket.Conn) {
 
 	inputChan := make(chan string)
 	go c.clientInput(inputChan)
+	go reader(conn)
 
 	for {
-
 		select {
 		case input := <-inputChan:
 			if err := conn.WriteMessage(websocket.TextMessage, []byte(input)); err != nil {
@@ -53,12 +54,23 @@ func (c *Client) handle(conn *websocket.Conn) {
 
 func (c *Client) clientInput(inputChan chan string) {
 
-	reader := bufio.NewReader(os.Stdin)
+	r := bufio.NewReader(os.Stdin)
 	for {
-		msg, err := reader.ReadString('\n')
+		msg, err := r.ReadString('\n')
 		if err == io.EOF {
 			continue
 		}
 		inputChan <- msg
 	}
+}
+
+func reader(conn *websocket.Conn) {
+
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	cr.Blue(string(msg))
+
 }
