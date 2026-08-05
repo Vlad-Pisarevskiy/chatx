@@ -1,6 +1,9 @@
 package server
 
 import (
+	client2 "chatflow/internal/client"
+	"chatflow/internal/service"
+	"context"
 	"log"
 	"net/http"
 	"time"
@@ -11,6 +14,7 @@ import (
 
 type Server struct {
 	upgrader websocket.Upgrader
+	service  *service.Service
 }
 
 func NewServer() *Server {
@@ -30,13 +34,33 @@ func (s *Server) GetRouter() *gin.Engine {
 
 	auth := r.Group("/auth")
 	{
-		auth.POST("/register")
-		auth.POST("/login")
+		auth.POST("/register", s.Register)
+		auth.POST("/login", s.Login)
 	}
 
 	r.GET("/ws", s.Run).Use()
 
 	return r
+}
+
+func (s *Server) Register(c *gin.Context) {
+
+	var client client2.Client
+	if err := c.ShouldBind(&client); err != nil {
+		c.JSON(401, gin.H{
+			"error": "invalid data",
+		})
+	}
+
+	if err := s.service.RegisterUser(c.Request.Context(), client); err != nil {
+		c.JSON(401, gin.H{
+			"error": err,
+		})
+	}
+}
+
+func (s *Server) Login(c *gin.Context) {
+
 }
 
 func (s *Server) Run(c *gin.Context) {
