@@ -4,7 +4,6 @@ type Client struct {
 	ID       string
 	Name     string
 	Login    string
-	Email    string
 	Password string
 }
 

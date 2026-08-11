@@ -1,9 +1,7 @@
 package server
 
 import (
-	client2 "chatflow/internal/client"
 	"chatflow/internal/service"
-	"context"
 	"log"
 	"net/http"
 	"time"
@@ -11,6 +9,17 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
+
+type RegisterRequest struct {
+	Name     string `json:"name"`
+	Login    string `json:"login"`
+	Password string `json:"password"`
+}
+
+type LoginRequest struct {
+	Login    string `json:"login"`
+	Password string `json:"password"`
+}
 
 type Server struct {
 	upgrader websocket.Upgrader
@@ -45,22 +54,40 @@ func (s *Server) GetRouter() *gin.Engine {
 
 func (s *Server) Register(c *gin.Context) {
 
-	var client client2.Client
-	if err := c.ShouldBind(&client); err != nil {
+	var registerRequest RegisterRequest
+	if err := c.ShouldBind(&registerRequest); err != nil {
 		c.JSON(401, gin.H{
 			"error": "invalid data",
 		})
+		return
 	}
 
-	if err := s.service.RegisterUser(c.Request.Context(), client); err != nil {
+	if err := s.service.RegisterUser(c.Request.Context(),
+		registerRequest.Name,
+		registerRequest.Login,
+		registerRequest.Password,
+	); err != nil {
 		c.JSON(401, gin.H{
 			"error": err,
 		})
+		return
 	}
 }
 
 func (s *Server) Login(c *gin.Context) {
 
+	var request LoginRequest
+	if err := c.ShouldBind(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid login data",
+		})
+		return
+	}
+
+	err := s.service.LoginUser(c.Request.Context(),
+		request.Login,
+		request.Password,
+	)
 }
 
 func (s *Server) Run(c *gin.Context) {
