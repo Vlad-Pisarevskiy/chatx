@@ -22,7 +22,7 @@ func NewRepository(ctx context.Context, pool *pgxpool.Pool) *Repository {
 func (r *Repository) RegisterUser(ctx context.Context, client model.Client) error {
 
 	_, err := r.pool.Exec(ctx, "INSERT INTO users(name, login, email, password) VALUES ($1, $2, $3, $4)",
-		client.Name, client.Login, client.Email, client.Password)
+		client.Name, client.Login, client.Password)
 	if err != nil {
 		return err
 	}
@@ -63,3 +63,41 @@ func (r *Repository) FindUserByLogin(ctx context.Context, login string) (*model.
 
 	return &client, nil
 }
+
+func (r *Repository) AddToken(ctx context.Context, userID string, token [32]byte) error {
+
+	_, err := r.pool.Exec(ctx, "INSERT INTO tokens(user_id, token) VALUES $1, $2", userID, token)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *Repository) CheckToken(ctx context.Context, token [32]byte) (userID int, err error) {
+
+	row := r.pool.QueryRow(ctx, "SELECT user_id FROM sessions WHERE token_hash=$1", token)
+
+	err = row.Scan(&userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, fmt.Errorf("no such token")
+		}
+		return userID, err
+	}
+
+	return userID, nil
+}
+
+//func (r *Repository) UserIdByToken(ctx context.Context, token [32]byte) (int, error) {
+//
+//	row := r.pool.QueryRow(ctx, "SELECT user_id FROM sessions WHERE token=$1")
+//
+//	var id int
+//	err := row.Scan(&id)
+//	if err != nil {
+//		return 0, err
+//	}
+//
+//	return id, nil
+//}

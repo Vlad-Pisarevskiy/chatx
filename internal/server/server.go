@@ -10,6 +10,17 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const (
+	readBuffer    = 1024
+	writeBuffer   = 1024
+	readDeadline  = time.Second * 30
+	writeDeadline = time.Second * 30
+	tickerTiming  = time.Second * 25
+	msgBufferSize = 256
+	readLimit     = 1024
+	userIdKey     = "userID"
+)
+
 type RegisterRequest struct {
 	Name     string `json:"name"`
 	Login    string `json:"login"`
@@ -29,8 +40,8 @@ type Server struct {
 func NewServer() *Server {
 
 	return &Server{upgrader: websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
+		ReadBufferSize:  readBuffer,
+		WriteBufferSize: writeBuffer,
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
@@ -47,7 +58,7 @@ func (s *Server) GetRouter() *gin.Engine {
 		auth.POST("/login", s.Login)
 	}
 
-	r.GET("/ws", s.Run).Use()
+	r.GET("/ws", s.Run).Use(s.authorization())
 
 	return r
 }
@@ -56,7 +67,7 @@ func (s *Server) Register(c *gin.Context) {
 
 	var registerRequest RegisterRequest
 	if err := c.ShouldBind(&registerRequest); err != nil {
-		c.JSON(401, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid data",
 		})
 		return
@@ -67,7 +78,7 @@ func (s *Server) Register(c *gin.Context) {
 		registerRequest.Login,
 		registerRequest.Password,
 	); err != nil {
-		c.JSON(401, gin.H{
+		c.JSON(http.StatusBadGateway, gin.H{
 			"error": err,
 		})
 		return
@@ -84,10 +95,47 @@ func (s *Server) Login(c *gin.Context) {
 		return
 	}
 
-	err := s.service.LoginUser(c.Request.Context(),
+	_, token, err := s.service.LoginUser(c.Request.Context(),
 		request.Login,
 		request.Password,
 	)
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error:": err,
+		})
+		return
+	}
+
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("token", token, 1200, "/", "", true, true)
+	c.JSON(http.StatusOK, gin.H{
+		"token": token,
+	})
+}
+
+func (s *Server) authorization() gin.HandlerFunc {
+	return func(c *gin.Context) {
+
+		token, err := c.Cookie("token")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "missing token",
+			})
+			c.Abort()
+		}
+
+		id, err := s.service.CheckToken(c.Request.Context(), token)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "authorization error",
+			})
+			c.Abort()
+		}
+
+		c.Set(userIdKey, id)
+		c.Next()
+	}
 }
 
 func (s *Server) Run(c *gin.Context) {
@@ -103,15 +151,16 @@ func (s *Server) Run(c *gin.Context) {
 
 func (s *Server) handle(conn *websocket.Conn) {
 
-	msgChan := make(chan []byte, 256)
+	msgChan := make(chan []byte, msgBufferSize)
 	defer close(msgChan)
 
-	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(time.Second * 20)) })
-	if err := conn.SetReadDeadline(time.Now().Add(time.Second * 30)); err != nil {
+	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(readDeadline)) })
+	if err := conn.SetReadDeadline(time.Now().Add(readDeadline)); err != nil {
 		log.Println(err)
 		return
 	}
-	conn.SetReadLimit(1024)
+
+	conn.SetReadLimit(readLimit)
 
 	go s.writer(conn, msgChan)
 
@@ -134,7 +183,7 @@ func (s *Server) reader(conn *websocket.Conn, msgChan chan []byte) {
 
 		msgChan <- message
 
-		if err = conn.SetReadDeadline(time.Now().Add(time.Second * 30)); err != nil {
+		if err = conn.SetReadDeadline(time.Now().Add(readDeadline)); err != nil {
 			log.Println(err)
 			return
 		}
@@ -143,7 +192,7 @@ func (s *Server) reader(conn *websocket.Conn, msgChan chan []byte) {
 
 func (s *Server) writer(conn *websocket.Conn, msgChan chan []byte) {
 
-	ticker := time.NewTicker(time.Second * 25)
+	ticker := time.NewTicker(tickerTiming)
 	defer ticker.Stop()
 	defer conn.Close()
 
@@ -155,7 +204,7 @@ func (s *Server) writer(conn *websocket.Conn, msgChan chan []byte) {
 				return
 			}
 
-			if err := conn.SetWriteDeadline(time.Now().Add(time.Second * 30)); err != nil {
+			if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
 				log.Println(err)
 				return
 			}
@@ -166,7 +215,7 @@ func (s *Server) writer(conn *websocket.Conn, msgChan chan []byte) {
 			}
 
 		case <-ticker.C:
-			if err := conn.SetWriteDeadline(time.Now().Add(time.Second * 30)); err != nil {
+			if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
 				log.Println(err)
 				return
 			}

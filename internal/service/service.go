@@ -3,8 +3,9 @@ package service
 import (
 	"chatflow/internal/model"
 	"chatflow/internal/repository"
-	rand "crypto/rand"
 	"context"
+	rand "crypto/rand"
+	"crypto/sha256"
 	"fmt"
 
 	"golang.org/x/crypto/bcrypt"
@@ -77,9 +78,25 @@ func (s *Service) LoginUser(ctx context.Context, login, password string) (*model
 		return nil, "", err
 	}
 
-	rand.Text()
+	token := rand.Text()
+	tokenHash := sha256.Sum256([]byte(token))
 
-	return user, "", err
+	if err = s.db.AddToken(ctx, user.ID, tokenHash); err != nil {
+		return nil, "", err
+	}
+
+	return user, token, err
+}
+
+func (s *Service) CheckToken(ctx context.Context, token string) (int, error) {
+
+	tokenHash := sha256.Sum256([]byte(token))
+	id, err := s.db.CheckToken(ctx, tokenHash)
+	if err != nil {
+		return 0, err
+	}
+
+	return id, nil
 }
 
 func (s *Service) hashPassword(password string) (string, error) {
