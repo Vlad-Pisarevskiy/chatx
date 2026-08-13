@@ -1,14 +1,24 @@
 package service
 
 import (
+	errors1 "chatflow/internal/app-errors"
 	"chatflow/internal/model"
 	"chatflow/internal/repository"
 	"context"
 	rand "crypto/rand"
 	"crypto/sha256"
-	"fmt"
 
 	"golang.org/x/crypto/bcrypt"
+)
+
+const (
+	minLoginLength = 3
+	maxLoginLength = 20
+
+	minPasswordLength = 4
+	maxPasswordLength = 50
+
+	maxNameLength = 50
 )
 
 type Service struct {
@@ -23,8 +33,8 @@ func (s *Service) RegisterUser(ctx context.Context, name, login, password string
 		Password: password,
 	}
 
-	if !s.correctLogin(client.Login) {
-		return fmt.Errorf("incorrect login")
+	if err := s.correctLogin(client.Login); err != nil {
+		return err
 	}
 
 	exists, err := s.db.LoginExists(ctx, client.Login)
@@ -33,15 +43,15 @@ func (s *Service) RegisterUser(ctx context.Context, name, login, password string
 	}
 
 	if exists {
-		return fmt.Errorf("login is already exists")
+		return errors1.ErrExistsLogin
 	}
 
-	if !s.correctName(client.Name) {
-		return fmt.Errorf("incorrect name")
+	if err = s.correctName(client.Name); err != nil {
+		return err
 	}
 
-	if !s.correctPassword(client.Password) {
-		return fmt.Errorf("incorrect password")
+	if err = s.correctPassword(client.Password); err != nil {
+		return err
 	}
 
 	hash, err := s.hashPassword(client.Password)
@@ -60,8 +70,8 @@ func (s *Service) RegisterUser(ctx context.Context, name, login, password string
 
 func (s *Service) LoginUser(ctx context.Context, login, password string) (*model.Client, string, error) {
 
-	if !s.correctLogin(login) {
-		return nil, "", fmt.Errorf("incorrect login")
+	if err := s.correctLogin(login); err != nil {
+		return nil, "", err
 	}
 
 	user, err := s.db.FindUserByLogin(ctx, login)
@@ -107,14 +117,49 @@ func (s *Service) hashPassword(password string) (string, error) {
 	return string(hashedPassword), nil
 }
 
-func (s *Service) correctName(name string) bool {
-	return name != "" && len(name) > 2
+func (s *Service) correctName(name string) error {
+
+	if name == "" {
+		return errors1.ErrEmptyName
+	}
+
+	if len(name) > maxNameLength {
+		return errors1.ErrLongName
+	}
+
+	return nil
 }
 
-func (s *Service) correctLogin(login string) bool {
-	return login != "" && len(login) > 2
+func (s *Service) correctLogin(login string) error {
+
+	if login == "" {
+		return errors1.ErrEmptyLogin
+	}
+
+	if len(login) < minLoginLength {
+		return errors1.ErrShortLogin
+	}
+
+	if len(login) > maxLoginLength {
+		return errors1.ErrLongLogin
+	}
+
+	return nil
 }
 
-func (s *Service) correctPassword(password string) bool {
-	return password != "" && len(password) > 5
+func (s *Service) correctPassword(password string) error {
+
+	if password == "" {
+		return errors1.ErrEmptyPassword
+	}
+
+	if len(password) < minPasswordLength {
+		return errors1.ErrShortPassword
+	}
+
+	if len(password) > maxPasswordLength {
+		return errors1.ErrLongPassword
+	}
+
+	return nil
 }

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	errors1 "chatflow/internal/app-errors"
 	"chatflow/internal/model"
 	"context"
 	"errors"
@@ -56,7 +57,7 @@ func (r *Repository) FindUserByLogin(ctx context.Context, login string) (*model.
 	err := row.Scan(&client)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("login not found")
+			return nil, errors1.ErrLoginNotFound
 		}
 		return nil, err
 	}
@@ -81,23 +82,10 @@ func (r *Repository) CheckToken(ctx context.Context, token [32]byte) (userID int
 	err = row.Scan(&userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, fmt.Errorf("no such token")
+			return 0, errors1.ErrInvalidToken
 		}
 		return userID, err
 	}
 
 	return userID, nil
 }
-
-//func (r *Repository) UserIdByToken(ctx context.Context, token [32]byte) (int, error) {
-//
-//	row := r.pool.QueryRow(ctx, "SELECT user_id FROM sessions WHERE token=$1")
-//
-//	var id int
-//	err := row.Scan(&id)
-//	if err != nil {
-//		return 0, err
-//	}
-//
-//	return id, nil
-//}

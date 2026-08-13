@@ -13,12 +13,15 @@ import (
 const (
 	readBuffer    = 1024
 	writeBuffer   = 1024
+	msgBufferSize = 256
+	readLimit     = 1024
+	cookieMaxAge  = 1200
+
 	readDeadline  = time.Second * 30
 	writeDeadline = time.Second * 30
 	tickerTiming  = time.Second * 25
-	msgBufferSize = 256
-	readLimit     = 1024
-	userIdKey     = "userID"
+
+	userIdKey = "userID"
 )
 
 type RegisterRequest struct {
@@ -108,7 +111,7 @@ func (s *Server) Login(c *gin.Context) {
 	}
 
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("token", token, 1200, "/", "", true, true)
+	c.SetCookie("token", token, cookieMaxAge, "/", "", true, true)
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
 	})

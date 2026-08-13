@@ -1,8 +1,8 @@
 package main
 
 import (
+	"chatflow/client"
 	"chatflow/config"
-	"chatflow/internal/client"
 )
 
 func main() {
