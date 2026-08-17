@@ -14,6 +14,14 @@ type Repository struct {
 	mu    sync.Mutex
 }
 
+func NewRepository() *Repository {
+
+	return &Repository{
+		users: make(map[login]*model.Client),
+		mu:    sync.Mutex{},
+	}
+}
+
 func (r *Repository) RegisterUser(ctx context.Context, client model.Client) error {
 
 	r.mu.Lock()
@@ -44,4 +52,12 @@ func (r *Repository) FindUserByLogin(ctx context.Context, userLogin string) (*mo
 	}
 
 	return r.users[login(userLogin)], nil
+}
+
+func (r *Repository) AddToken(ctx context.Context, userID string, token [32]byte) error {
+	return nil
+}
+
+func (r *Repository) CheckToken(ctx context.Context, token [32]byte) (userID int, err error) {
+	return 0, nil
 }

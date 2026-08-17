@@ -24,17 +24,16 @@ type Repository interface {
 	RegisterUser(ctx context.Context, client model.Client) error
 	LoginExists(ctx context.Context, userLogin string) (bool, error)
 	FindUserByLogin(ctx context.Context, login string) (*model.Client, error)
-}
-
-type RepositoryToken interface {
-	Repository
 	AddToken(ctx context.Context, userID string, token [32]byte) error
 	CheckToken(ctx context.Context, token [32]byte) (userID int, err error)
 }
 
 type Service struct {
-	db      Repository
-	dbToken RepositoryToken
+	db Repository
+}
+
+func NewService(repo Repository) *Service {
+	return &Service{db: repo}
 }
 
 func (s *Service) RegisterUser(ctx context.Context, name, login, password string) error {
@@ -103,7 +102,7 @@ func (s *Service) LoginUser(ctx context.Context, login, password string) (*model
 	token := rand.Text()
 	tokenHash := sha256.Sum256([]byte(token))
 
-	if err = s.dbToken.AddToken(ctx, user.ID, tokenHash); err != nil {
+	if err = s.db.AddToken(ctx, user.ID, tokenHash); err != nil {
 		return nil, "", err
 	}
 
@@ -113,7 +112,7 @@ func (s *Service) LoginUser(ctx context.Context, login, password string) (*model
 func (s *Service) CheckToken(ctx context.Context, token string) (int, error) {
 
 	tokenHash := sha256.Sum256([]byte(token))
-	id, err := s.dbToken.CheckToken(ctx, tokenHash)
+	id, err := s.db.CheckToken(ctx, tokenHash)
 	if err != nil {
 		return 0, err
 	}

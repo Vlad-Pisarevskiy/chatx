@@ -1,8 +1,9 @@
 package server
 
 import (
+	"chatflow/internal/model"
 	"chatflow/internal/protocol"
-	"chatflow/internal/service"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -14,39 +15,20 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const (
-	readBuffer    = 1024
-	writeBuffer   = 1024
-	msgBufferSize = 256
-	readLimit     = 1024
-	cookieMaxAge  = 1200
-
-	readDeadline  = time.Second * 30
-	writeDeadline = time.Second * 30
-	tickerTiming  = time.Second * 25
-
-	userIdKey = "userID"
-)
-
-type RegisterRequest struct {
-	Name     string `json:"name"`
-	Login    string `json:"login"`
-	Password string `json:"password"`
-}
-
-type LoginRequest struct {
-	Login    string `json:"login"`
-	Password string `json:"password"`
+type Service interface {
+	RegisterUser(ctx context.Context, name, login, password string) error
+	LoginUser(ctx context.Context, login, password string) (*model.Client, string, error)
+	CheckToken(ctx context.Context, token string) (int, error)
 }
 
 type Server struct {
 	upgrader websocket.Upgrader
-	service  *service.Service
-	conns    map[string][]*websocket.Conn // Держит все текущие соединения
+	service  Service
+	conns    map[string][]*websocket.Conn
 	mu       sync.RWMutex
 }
 
-func NewServer() *Server {
+func NewServer(srv Service) *Server {
 
 	return &Server{
 		upgrader: websocket.Upgrader{
@@ -56,7 +38,8 @@ func NewServer() *Server {
 				return true
 			},
 		},
-		conns: make(map[string][]*websocket.Conn)}
+		conns:   make(map[string][]*websocket.Conn),
+		service: srv}
 }
 
 func (s *Server) GetRouter() *gin.Engine {
