@@ -5,5 +5,4 @@ CREATE TABLE conversations(
 
 CREATE TABLE conversation_members(
     id SERIAL PRIMARY KEY
-
 )

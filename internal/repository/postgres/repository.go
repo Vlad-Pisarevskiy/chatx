@@ -1,11 +1,10 @@
-package repository
+package postgres
 
 import (
 	errors1 "chatflow/internal/app-errors"
 	"chatflow/internal/model"
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,7 +21,7 @@ func NewRepository(ctx context.Context, pool *pgxpool.Pool) *Repository {
 
 func (r *Repository) RegisterUser(ctx context.Context, client model.Client) error {
 
-	_, err := r.pool.Exec(ctx, "INSERT INTO users(name, login, email, password) VALUES ($1, $2, $3, $4)",
+	_, err := r.pool.Exec(ctx, "INSERT INTO users(name, login, password) VALUES ($1, $2, $3)",
 		client.Name, client.Login, client.Password)
 	if err != nil {
 		return err
@@ -35,9 +34,9 @@ func (r *Repository) LoginExists(ctx context.Context, login string) (bool, error
 
 	row := r.pool.QueryRow(ctx, "SELECT login FROM users WHERE login=$1", login)
 
-	var exists bool
+	var dbLogin string
 
-	err := row.Scan(&exists)
+	err := row.Scan(&dbLogin)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil

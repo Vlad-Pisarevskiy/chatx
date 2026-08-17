@@ -1,9 +1,13 @@
 package server
 
 import (
+	"chatflow/internal/protocol"
 	"chatflow/internal/service"
+	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -38,22 +42,31 @@ type LoginRequest struct {
 type Server struct {
 	upgrader websocket.Upgrader
 	service  *service.Service
+	conns    map[string][]*websocket.Conn // Держит все текущие соединения
+	mu       sync.RWMutex
 }
 
 func NewServer() *Server {
 
-	return &Server{upgrader: websocket.Upgrader{
-		ReadBufferSize:  readBuffer,
-		WriteBufferSize: writeBuffer,
-		CheckOrigin: func(r *http.Request) bool {
-			return true
+	return &Server{
+		upgrader: websocket.Upgrader{
+			ReadBufferSize:  readBuffer,
+			WriteBufferSize: writeBuffer,
+			CheckOrigin: func(r *http.Request) bool {
+				return true
+			},
 		},
-	}}
+		conns: make(map[string][]*websocket.Conn)}
 }
 
 func (s *Server) GetRouter() *gin.Engine {
 
 	r := gin.Default()
+
+	r.LoadHTMLFiles("web/login.html", "web/register.html")
+
+	r.GET("/register", s.Registration)
+	r.GET("/login", s.Authorization)
 
 	auth := r.Group("/auth")
 	{
@@ -61,9 +74,19 @@ func (s *Server) GetRouter() *gin.Engine {
 		auth.POST("/login", s.Login)
 	}
 
-	r.GET("/ws", s.Run).Use(s.authorization())
+	ws := r.Group("/ws")
+	//ws.Use(s.authorization())
+	ws.GET("/", s.Run)
 
 	return r
+}
+
+func (s *Server) Registration(c *gin.Context) {
+	c.HTML(http.StatusOK, "register.html", nil)
+}
+
+func (s *Server) Authorization(c *gin.Context) {
+	c.HTML(http.StatusOK, "login.html", nil)
 }
 
 func (s *Server) Register(c *gin.Context) {
@@ -98,7 +121,7 @@ func (s *Server) Login(c *gin.Context) {
 		return
 	}
 
-	_, token, err := s.service.LoginUser(c.Request.Context(),
+	user, token, err := s.service.LoginUser(c.Request.Context(),
 		request.Login,
 		request.Password,
 	)
@@ -110,11 +133,145 @@ func (s *Server) Login(c *gin.Context) {
 		return
 	}
 
+	// Устанавливает, кто может переходить на сайт по ссылкам
 	c.SetSameSite(http.SameSiteLaxMode)
+
+	// Задаем куки. Path определяет путь по которому будут работать куки. Secure определяет доступность для не https соединений
 	c.SetCookie("token", token, cookieMaxAge, "/", "", true, true)
+
 	c.JSON(http.StatusOK, gin.H{
-		"token": token,
+		"successful login": fmt.Sprintf("welcome, %s", user.Login),
 	})
+}
+
+func (s *Server) Run(c *gin.Context) {
+
+	userID, ok := c.Get(userIdKey)
+	if !ok {
+		log.Println("unexpected error")
+		return
+	}
+
+	conn, err := s.upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	// Добавляем соединение в пул
+	id := fmt.Sprint(userID)
+
+	s.mu.Lock()
+	s.conns[id] = append(s.conns[id], conn)
+	s.mu.Unlock()
+
+	defer s.removeConn(id, conn)
+
+	s.handle(conn)
+}
+
+func (s *Server) removeConn(userID string, conn *websocket.Conn) {
+
+	conns := make([]*websocket.Conn, 0, len(s.conns[userID]))
+	copy(conns, s.conns[userID])
+
+	for i, c := range conns {
+		if c == conn {
+			conns = append(conns[:i], conns[i+1:]...)
+		}
+	}
+
+	s.conns[userID] = conns
+}
+
+func (s *Server) handle(conn *websocket.Conn) {
+
+	msgChan := make(chan protocol.SendMessage, msgBufferSize) // Канал для связи между горутинами
+	done := make(chan struct{})
+
+	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(readDeadline)) })
+	if err := conn.SetReadDeadline(time.Now().Add(readDeadline)); err != nil {
+		log.Println(err)
+		return
+	}
+
+	conn.SetReadLimit(readLimit)
+
+	go s.writer(conn, msgChan, done)
+
+	s.reader(conn, msgChan, done)
+}
+
+// TODO: reader должен прочитать сообщение, через пакет протокола распарсить его, отправить данные в writer функцию
+func (s *Server) reader(conn *websocket.Conn, msgChan chan protocol.SendMessage, done chan struct{}) {
+
+	defer conn.Close()
+	defer close(msgChan)
+	defer close(done)
+
+	for {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			log.Println(err)
+			done <- struct{}{}
+			return
+		}
+
+		var sendMessage protocol.SendMessage
+		if err = json.Unmarshal(message, &sendMessage); err != nil {
+			log.Println(err)
+			return
+		}
+
+		if err = conn.SetReadDeadline(time.Now().Add(readDeadline)); err != nil {
+			log.Println(err)
+			done <- struct{}{}
+			return
+		}
+	}
+}
+
+// TODO: writer должен прочитать сообщение, понять кому оно адресовано, проитерироваться по всем соединениям получателя и зааписать в них сообщение
+func (s *Server) writer(conn *websocket.Conn, msgChan chan protocol.SendMessage, done chan struct{}) {
+
+	ticker := time.NewTicker(tickerTiming)
+	defer ticker.Stop()
+	defer conn.Close()
+
+	for {
+		select {
+		case msg, ok := <-msgChan:
+
+			if !ok {
+				return
+			}
+
+			if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
+				log.Println(err)
+				return
+			}
+
+			if err := s.sendMessage(msg.To, msg.Message); err != nil {
+				log.Println(err)
+				return
+			}
+
+		case <-ticker.C:
+
+			if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
+				log.Println(err)
+				return
+			}
+
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Println(err)
+				return
+			}
+
+		case <-done:
+			return
+		}
+	}
 }
 
 func (s *Server) authorization() gin.HandlerFunc {
@@ -141,92 +298,12 @@ func (s *Server) authorization() gin.HandlerFunc {
 	}
 }
 
-func (s *Server) Run(c *gin.Context) {
+func (s *Server) sendMessage(id, message string) error {
 
-	conn, err := s.upgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	s.handle(conn)
-}
-
-func (s *Server) handle(conn *websocket.Conn) {
-
-	msgChan := make(chan []byte, msgBufferSize)
-	defer close(msgChan)
-
-	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(readDeadline)) })
-	if err := conn.SetReadDeadline(time.Now().Add(readDeadline)); err != nil {
-		log.Println(err)
-		return
-	}
-
-	conn.SetReadLimit(readLimit)
-
-	go s.writer(conn, msgChan)
-
-	s.reader(conn, msgChan)
-}
-
-func (s *Server) reader(conn *websocket.Conn, msgChan chan []byte) {
-
-	defer conn.Close()
-
-	for {
-
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-
-		log.Printf("received: %s", message)
-
-		msgChan <- message
-
-		if err = conn.SetReadDeadline(time.Now().Add(readDeadline)); err != nil {
-			log.Println(err)
-			return
+	for _, c := range s.conns[id] {
+		if err := c.WriteMessage(websocket.TextMessage, []byte(message)); err != nil {
+			return err
 		}
 	}
-}
-
-func (s *Server) writer(conn *websocket.Conn, msgChan chan []byte) {
-
-	ticker := time.NewTicker(tickerTiming)
-	defer ticker.Stop()
-	defer conn.Close()
-
-	for {
-		select {
-		case msg, ok := <-msgChan:
-
-			if !ok {
-				return
-			}
-
-			if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
-				log.Println(err)
-				return
-			}
-
-			if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-				log.Println(err)
-				return
-			}
-
-		case <-ticker.C:
-			if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
-				log.Println(err)
-				return
-			}
-
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				log.Println(err)
-				return
-			}
-		}
-	}
+	return nil
 }

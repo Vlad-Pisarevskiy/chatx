@@ -2,9 +2,12 @@ package client
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
@@ -20,6 +23,57 @@ func NewClient() *Client {
 }
 
 func (c *Client) StartChat(addr string) {
+
+	var choise int
+	fmt.Println("Выберите действие: \n1 - Зарегистрироваться\n2 - Войти\n3 - Подключиться к чату")
+	_, _ = fmt.Scan(&choise)
+	for {
+		switch choise {
+		case 1:
+			//var name string
+			//var login string
+			//var password string
+
+			//fmt.Print("Введите имя: ")
+			//fmt.Scan(&name)
+			//
+			//fmt.Print("Введите логин: ")
+			//fmt.Scan(&login)
+			//
+			//fmt.Print("Введите пароль: ")
+			//fmt.Scan(&password)
+
+			var register = struct {
+				Name     string `json:"name"`
+				Login    string `json:"login"`
+				Password string `json:"password"`
+			}{
+				Name:     "name",
+				Login:    "login",
+				Password: "my_password",
+			}
+
+			data, err := json.Marshal(register)
+			if err != nil {
+				log.Println(err)
+			}
+			rdr := bytes.NewReader(data)
+
+			r, err := http.Post(fmt.Sprintf("http://%s/auth/register", addr), "application/json", rdr)
+			if r.StatusCode != http.StatusOK {
+				log.Println(r.StatusCode)
+				return
+			}
+			fmt.Println(r.Body)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+
+		case 2:
+		case 3:
+		}
+	}
 
 	conn, _, err := websocket.DefaultDialer.Dial(fmt.Sprintf("ws://%s/ws", addr), nil)
 	if err != nil {
