@@ -1,9 +1,7 @@
 package server
 
 import (
-	"chatflow/internal/model"
 	"chatflow/internal/protocol"
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -15,22 +13,16 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-type Service interface {
-	RegisterUser(ctx context.Context, name, login, password string) error
-	LoginUser(ctx context.Context, login, password string) (*model.Client, string, error)
-	CheckToken(ctx context.Context, token string) (int, error)
-}
-
-type Server struct {
+type MockServer struct {
 	upgrader websocket.Upgrader
 	service  Service
 	conns    map[string][]*websocket.Conn
 	mu       sync.RWMutex
 }
 
-func NewServer(srv Service) *Server {
+func NewMockServer(service Service) *MockServer {
 
-	return &Server{
+	return &MockServer{
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  readBuffer,
 			WriteBufferSize: writeBuffer,
@@ -38,18 +30,15 @@ func NewServer(srv Service) *Server {
 				return true
 			},
 		},
+		service: service,
 		conns:   make(map[string][]*websocket.Conn),
-		service: srv}
+		mu:      sync.RWMutex{},
+	}
 }
 
-func (s *Server) GetRouter() *gin.Engine {
+func (s *MockServer) GetMockRouter() *gin.Engine {
 
 	r := gin.Default()
-
-	r.LoadHTMLFiles("web/login.html", "web/register.html")
-
-	r.GET("/register", s.Registration)
-	r.GET("/login", s.Authorization)
 
 	auth := r.Group("/auth")
 	{
@@ -57,23 +46,12 @@ func (s *Server) GetRouter() *gin.Engine {
 		auth.POST("/login", s.Login)
 	}
 
-	ws := r.Group("/ws")
-	//ws.Use(s.authorization())
-	ws.Use(s.login())
-	ws.GET("/", s.Run)
+	r.GET("/ws", s.Run)
 
 	return r
 }
 
-func (s *Server) Registration(c *gin.Context) {
-	c.HTML(http.StatusOK, "register.html", nil)
-}
-
-func (s *Server) Authorization(c *gin.Context) {
-	c.HTML(http.StatusOK, "login.html", nil)
-}
-
-func (s *Server) Register(c *gin.Context) {
+func (s *MockServer) Register(c *gin.Context) {
 
 	var registerRequest RegisterRequest
 	if err := c.ShouldBind(&registerRequest); err != nil {
@@ -99,7 +77,7 @@ func (s *Server) Register(c *gin.Context) {
 	})
 }
 
-func (s *Server) Login(c *gin.Context) {
+func (s *MockServer) Login(c *gin.Context) {
 
 	var request LoginRequest
 	if err := c.ShouldBind(&request); err != nil {
@@ -109,7 +87,7 @@ func (s *Server) Login(c *gin.Context) {
 		return
 	}
 
-	user, token, err := s.service.LoginUser(c.Request.Context(),
+	user, _, err := s.service.LoginUser(c.Request.Context(),
 		request.Login,
 		request.Password,
 	)
@@ -121,20 +99,17 @@ func (s *Server) Login(c *gin.Context) {
 		return
 	}
 
-	// Устанавливает, кто может переходить на сайт по ссылкам
-	c.SetSameSite(http.SameSiteLaxMode)
-
-	// Задаем куки. Path определяет путь по которому будут работать куки. Secure определяет доступность для не https соединений
-	c.SetCookie("token", token, cookieMaxAge, "/", "", true, true)
+	c.Set("login", user.Login)
 
 	c.JSON(http.StatusOK, gin.H{
 		"successful login": fmt.Sprintf("welcome, %s", user.Login),
 	})
+
 }
 
-func (s *Server) Run(c *gin.Context) {
+func (s *MockServer) Run(c *gin.Context) {
 
-	userID, ok := c.Get(userLoginKey)
+	userLogin, ok := c.Get("login")
 	if !ok {
 		log.Println("unexpected error")
 		return
@@ -147,18 +122,18 @@ func (s *Server) Run(c *gin.Context) {
 	}
 
 	// Добавляем соединение в пул
-	id := fmt.Sprint(userID)
+	login := fmt.Sprint(userLogin)
 
 	s.mu.Lock()
-	s.conns[id] = append(s.conns[id], conn)
+	s.conns[login] = append(s.conns[login], conn)
 	s.mu.Unlock()
 
-	defer s.removeConn(id, conn)
+	defer s.removeConn(login, conn)
 
 	s.handle(conn)
 }
 
-func (s *Server) removeConn(userID string, conn *websocket.Conn) {
+func (s *MockServer) removeConn(userID string, conn *websocket.Conn) {
 
 	conns := make([]*websocket.Conn, 0, len(s.conns[userID]))
 	copy(conns, s.conns[userID])
@@ -172,7 +147,7 @@ func (s *Server) removeConn(userID string, conn *websocket.Conn) {
 	s.conns[userID] = conns
 }
 
-func (s *Server) handle(conn *websocket.Conn) {
+func (s *MockServer) handle(conn *websocket.Conn) {
 
 	msgChan := make(chan protocol.SendMessage, msgBufferSize) // Канал для связи между горутинами
 	done := make(chan struct{})
@@ -191,17 +166,17 @@ func (s *Server) handle(conn *websocket.Conn) {
 }
 
 // TODO: reader должен прочитать сообщение, через пакет протокола распарсить его, отправить данные в writer функцию
-func (s *Server) reader(conn *websocket.Conn, msgChan chan protocol.SendMessage, done chan struct{}) {
+func (s *MockServer) reader(conn *websocket.Conn, msgChan chan protocol.SendMessage, done chan struct{}) {
 
 	defer conn.Close()
 	defer close(msgChan)
+	defer close(done)
 
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			log.Println(err)
 			done <- struct{}{}
-			close(done)
 			return
 		}
 
@@ -210,8 +185,6 @@ func (s *Server) reader(conn *websocket.Conn, msgChan chan protocol.SendMessage,
 			log.Println(err)
 			return
 		}
-
-		msgChan <- sendMessage
 
 		if err = conn.SetReadDeadline(time.Now().Add(readDeadline)); err != nil {
 			log.Println(err)
@@ -222,7 +195,7 @@ func (s *Server) reader(conn *websocket.Conn, msgChan chan protocol.SendMessage,
 }
 
 // TODO: writer должен прочитать сообщение, понять кому оно адресовано, проитерироваться по всем соединениям получателя и зааписать в них сообщение
-func (s *Server) writer(conn *websocket.Conn, msgChan chan protocol.SendMessage, done chan struct{}) {
+func (s *MockServer) writer(conn *websocket.Conn, msgChan chan protocol.SendMessage, done chan struct{}) {
 
 	ticker := time.NewTicker(tickerTiming)
 	defer ticker.Stop()
@@ -264,44 +237,9 @@ func (s *Server) writer(conn *websocket.Conn, msgChan chan protocol.SendMessage,
 	}
 }
 
-func (s *Server) authorization() gin.HandlerFunc {
-	return func(c *gin.Context) {
+func (s *MockServer) sendMessage(login, message string) error {
 
-		token, err := c.Cookie("token")
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "missing token",
-			})
-			c.Abort()
-		}
-
-		id, err := s.service.CheckToken(c.Request.Context(), token)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "authorization error",
-			})
-			c.Abort()
-		}
-
-		c.Set(userIdKey, id)
-		c.Next()
-	}
-}
-
-func (s *Server) login() gin.HandlerFunc {
-
-	return func(c *gin.Context) {
-
-		login := c.Query("login")
-
-		c.Set(userLoginKey, login)
-		c.Next()
-	}
-}
-
-func (s *Server) sendMessage(id, message string) error {
-
-	for _, c := range s.conns[id] {
+	for _, c := range s.conns[login] {
 		if err := c.WriteMessage(websocket.TextMessage, []byte(message)); err != nil {
 			return err
 		}

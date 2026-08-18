@@ -24,11 +24,12 @@ func NewClient() *Client {
 
 func (c *Client) StartChat(addr string) {
 
-	var choise int
-	fmt.Println("Выберите действие: \n1 - Зарегистрироваться\n2 - Войти\n3 - Подключиться к чату")
-	_, _ = fmt.Scan(&choise)
+	var choose int
 	for {
-		switch choise {
+
+		fmt.Println("Выберите действие: \n1 - Зарегистрироваться\n2 - Войти\n3 - Подключиться к чату")
+		_, _ = fmt.Scan(&choose)
+		switch choose {
 		case 1:
 			//var name string
 			//var login string
@@ -71,6 +72,30 @@ func (c *Client) StartChat(addr string) {
 			}
 
 		case 2:
+
+			var login = struct {
+				Login    string `json:"login"`
+				Password string `json:"password"`
+			}{
+				Login:    "login",
+				Password: "my_password",
+			}
+
+			data, _ := json.Marshal(login)
+
+			loginData := bytes.NewReader(data)
+
+			r, err := http.Post(fmt.Sprintf("http://%s/auth/login", addr), "application/json", loginData)
+			if r.StatusCode != http.StatusOK {
+				log.Println(r.StatusCode)
+				return
+			}
+			fmt.Println(r.Body)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+
 		case 3:
 		}
 	}
