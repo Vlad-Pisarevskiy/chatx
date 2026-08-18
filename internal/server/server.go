@@ -24,7 +24,7 @@ type Service interface {
 type Server struct {
 	upgrader websocket.Upgrader
 	service  Service
-	conns    map[string][]*websocket.Conn
+	conns    map[string]chan protocol.SendMessage
 	mu       sync.RWMutex
 }
 
@@ -38,7 +38,7 @@ func NewServer(srv Service) *Server {
 				return true
 			},
 		},
-		conns:   make(map[string][]*websocket.Conn),
+		conns:   make(map[string]chan protocol.SendMessage, msgBufferSize),
 		service: srv}
 }
 
@@ -95,7 +95,7 @@ func (s *Server) Register(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"success": "registred",
+		"success": "registered",
 	})
 }
 
@@ -149,32 +149,33 @@ func (s *Server) Run(c *gin.Context) {
 	// Добавляем соединение в пул
 	id := fmt.Sprint(userID)
 
-	s.mu.Lock()
-	s.conns[id] = append(s.conns[id], conn)
-	s.mu.Unlock()
+	//defer s.removeConn(id, conn)
 
-	defer s.removeConn(id, conn)
-
-	s.handle(conn)
+	s.handle(id, conn)
 }
 
-func (s *Server) removeConn(userID string, conn *websocket.Conn) {
+//func (s *Server) removeConn(userID string, conn *websocket.Conn) {
+//
+//	conns := make([]*websocket.Conn, 0, len(s.conns[userID]))
+//	copy(conns, s.conns[userID])
+//
+//	for i, c := range conns {
+//		if c == conn {
+//			conns = append(conns[:i], conns[i+1:]...)
+//		}
+//	}
+//
+//	s.conns[userID] = conns
+//}
 
-	conns := make([]*websocket.Conn, 0, len(s.conns[userID]))
-	copy(conns, s.conns[userID])
-
-	for i, c := range conns {
-		if c == conn {
-			conns = append(conns[:i], conns[i+1:]...)
-		}
-	}
-
-	s.conns[userID] = conns
-}
-
-func (s *Server) handle(conn *websocket.Conn) {
+func (s *Server) handle(userID string, conn *websocket.Conn) {
 
 	msgChan := make(chan protocol.SendMessage, msgBufferSize) // Канал для связи между горутинами
+
+	s.mu.Lock()
+	s.conns[userID] = msgChan
+	s.mu.Unlock()
+
 	done := make(chan struct{})
 
 	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(readDeadline)) })
@@ -195,13 +196,13 @@ func (s *Server) reader(conn *websocket.Conn, msgChan chan protocol.SendMessage,
 
 	defer conn.Close()
 	defer close(msgChan)
+	defer close(done)
 
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			log.Println(err)
 			done <- struct{}{}
-			close(done)
 			return
 		}
 
@@ -211,7 +212,16 @@ func (s *Server) reader(conn *websocket.Conn, msgChan chan protocol.SendMessage,
 			return
 		}
 
-		msgChan <- sendMessage
+		s.mu.Lock()
+		if _, ok := s.conns[sendMessage.To]; !ok {
+			msgChan <- protocol.SendMessage{
+				From:    "",
+				To:      "",
+				Message: "Пользователя нет в сети",
+			}
+		}
+		s.conns[sendMessage.To] <- sendMessage
+		s.mu.Unlock()
 
 		if err = conn.SetReadDeadline(time.Now().Add(readDeadline)); err != nil {
 			log.Println(err)
@@ -236,12 +246,12 @@ func (s *Server) writer(conn *websocket.Conn, msgChan chan protocol.SendMessage,
 				return
 			}
 
-			if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
+			if err := conn.WriteMessage(websocket.TextMessage, []byte(msg.Message)); err != nil {
 				log.Println(err)
 				return
 			}
 
-			if err := s.sendMessage(msg.To, msg.Message); err != nil {
+			if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
 				log.Println(err)
 				return
 			}
@@ -297,14 +307,4 @@ func (s *Server) login() gin.HandlerFunc {
 		c.Set(userLoginKey, login)
 		c.Next()
 	}
-}
-
-func (s *Server) sendMessage(id, message string) error {
-
-	for _, c := range s.conns[id] {
-		if err := c.WriteMessage(websocket.TextMessage, []byte(message)); err != nil {
-			return err
-		}
-	}
-	return nil
 }

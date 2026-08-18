@@ -34,17 +34,34 @@ func TestServer_Websocket(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusSwitchingProtocols, r.StatusCode)
 
+	conn3, r, err := dialer.Dial("ws://"+strings.TrimPrefix(srv.URL, "http://")+"/ws/?login=user3", nil)
+	assert.Nil(t, err)
+	assert.Equal(t, http.StatusSwitchingProtocols, r.StatusCode)
+
 	message := protocol.SendMessage{
 		To:      "user2",
-		Message: "Hello",
+		Message: "Hello From User 1",
 	}
-
 	data, err := json.Marshal(message)
 	assert.Nil(t, err)
+
+	message2 := protocol.SendMessage{
+		To:      "user2",
+		Message: "Hello From User 3",
+	}
+	data2, err := json.Marshal(message2)
+	assert.Nil(t, err)
+
 	err = conn1.WriteMessage(websocket.TextMessage, data)
+	assert.Nil(t, err)
+	err = conn3.WriteMessage(websocket.TextMessage, data2)
 	assert.Nil(t, err)
 
 	_, msg, err := conn2.ReadMessage()
 	assert.Nil(t, err)
-	assert.Equal(t, "Hello", string(msg))
+	assert.Equal(t, "Hello From User 1", string(msg))
+
+	_, msg, err = conn2.ReadMessage()
+	assert.Nil(t, err)
+	assert.Equal(t, "Hello From User 3", string(msg))
 }
