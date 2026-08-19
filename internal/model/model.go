@@ -12,3 +12,9 @@ type Message struct {
 	To   string
 	Data string
 }
+
+type UserFromDB struct {
+	ID    string
+	Name  string
+	Login string
+}

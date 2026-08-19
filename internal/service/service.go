@@ -24,9 +24,10 @@ type Repository interface {
 	RegisterUser(ctx context.Context, client model.User) error
 	LoginExists(ctx context.Context, userLogin string) (bool, error)
 	FindUserByLogin(ctx context.Context, login string) (*model.User, error)
-	AddToken(ctx context.Context, userID string, token [32]byte) error
-	CheckToken(ctx context.Context, token [32]byte) (userID int, err error)
-	SendMessage(ctx context.Context, From, To, Message string) error
+	AddToken(ctx context.Context, userID string, token []byte) error
+	CheckToken(ctx context.Context, token []byte) (userID int, err error)
+	GetUsers(ctx context.Context) ([]model.UserFromDB, error)
+	//	SendMessage(ctx context.Context, From, To, Message string) error
 }
 
 type Service struct {
@@ -98,7 +99,7 @@ func (s *Service) LoginUser(ctx context.Context, login, password string) (*model
 	token := rand.Text()
 	tokenHash := sha256.Sum256([]byte(token))
 
-	if err = s.db.AddToken(ctx, user.ID, tokenHash); err != nil {
+	if err = s.db.AddToken(ctx, user.ID, tokenHash[:]); err != nil {
 		return nil, "", err
 	}
 
@@ -108,12 +109,22 @@ func (s *Service) LoginUser(ctx context.Context, login, password string) (*model
 func (s *Service) CheckToken(ctx context.Context, token string) (int, error) {
 
 	tokenHash := sha256.Sum256([]byte(token))
-	id, err := s.db.CheckToken(ctx, tokenHash)
+	id, err := s.db.CheckToken(ctx, tokenHash[:])
 	if err != nil {
 		return 0, err
 	}
 
 	return id, nil
+}
+
+func (s *Service) GetUsers(ctx context.Context) ([]model.UserFromDB, error) {
+
+	users, err := s.db.GetUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return users, nil
 }
 
 func (s *Service) hashPassword(password string) (string, error) {

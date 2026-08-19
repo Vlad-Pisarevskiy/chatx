@@ -19,6 +19,7 @@ type Service interface {
 	RegisterUser(ctx context.Context, name, login, password string) error
 	LoginUser(ctx context.Context, login, password string) (*model.User, string, error)
 	CheckToken(ctx context.Context, token string) (int, error)
+	GetUsers(ctx context.Context) ([]model.UserFromDB, error)
 }
 
 type Server struct {
@@ -46,7 +47,7 @@ func (s *Server) GetRouter() *gin.Engine {
 
 	r := gin.Default()
 
-	r.LoadHTMLFiles("web/login.html", "web/register.html")
+	r.LoadHTMLFiles("web/login.html", "web/register.html", "web/users.html")
 
 	r.GET("/register", s.Registration)
 	r.GET("/login", s.Authorization)
@@ -62,6 +63,10 @@ func (s *Server) GetRouter() *gin.Engine {
 	//ws.Use(s.login())
 	ws.GET("/", s.Run)
 
+	u := r.Group("")
+	u.Use(s.pageAuthorization())
+	u.GET("/users", s.Chats)
+
 	return r
 }
 
@@ -71,6 +76,21 @@ func (s *Server) Registration(c *gin.Context) {
 
 func (s *Server) Authorization(c *gin.Context) {
 	c.HTML(http.StatusOK, "login.html", nil)
+}
+
+func (s *Server) Chats(c *gin.Context) {
+
+	users, err := s.service.GetUsers(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.HTML(http.StatusOK, "users.html", gin.H{
+		"Users": users,
+	})
 }
 
 func (s *Server) Register(c *gin.Context) {
@@ -269,6 +289,30 @@ func (s *Server) authorization() gin.HandlerFunc {
 				"error": "missing token",
 			})
 			c.Abort()
+			return
+		}
+
+		id, err := s.service.CheckToken(c.Request.Context(), token)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "authorization error",
+			})
+			c.Abort()
+			return
+		}
+
+		c.Set(userIdKey, id)
+		c.Next()
+	}
+}
+
+func (s *Server) pageAuthorization() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		token, err := c.Cookie("token")
+		if err != nil {
+			c.Redirect(http.StatusFound, "/login")
+			c.Abort()
+			return
 		}
 
 		id, err := s.service.CheckToken(c.Request.Context(), token)

@@ -5,6 +5,7 @@ import (
 	"chatflow/internal/model"
 	"context"
 	"errors"
+	"log"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,7 +33,7 @@ func (r *Repository) RegisterUser(ctx context.Context, client model.User) error 
 
 func (r *Repository) LoginExists(ctx context.Context, login string) (bool, error) {
 
-	row := r.pool.QueryRow(ctx, "SELECT login FROM users WHERE login=$1", login)
+	row := r.pool.QueryRow(ctx, "SELECT login FROM users WHERE login = $1", login)
 
 	var dbLogin string
 
@@ -51,9 +52,12 @@ func (r *Repository) FindUserByLogin(ctx context.Context, login string) (*model.
 
 	var client model.User
 
-	row := r.pool.QueryRow(ctx, "SELECT id, name, login, password FROM users WHERE login=$1", login)
-
-	err := row.Scan(&client)
+	row := r.pool.QueryRow(ctx, "SELECT id, name, login, password FROM users WHERE login=($1)", login)
+	err := row.Scan(
+		&client.ID,
+		&client.Name,
+		&client.Login,
+		&client.Password)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, errors1.ErrIncorrectLoginData
@@ -64,9 +68,9 @@ func (r *Repository) FindUserByLogin(ctx context.Context, login string) (*model.
 	return &client, nil
 }
 
-func (r *Repository) AddToken(ctx context.Context, userID string, token [32]byte) error {
+func (r *Repository) AddToken(ctx context.Context, userID string, token []byte) error {
 
-	_, err := r.pool.Exec(ctx, "INSERT INTO tokens(user_id, token) VALUES $1, $2", userID, token)
+	_, err := r.pool.Exec(ctx, "INSERT INTO tokens(user_id, token_hash) VALUES ($1, $2)", userID, token)
 	if err != nil {
 		return err
 	}
@@ -74,9 +78,9 @@ func (r *Repository) AddToken(ctx context.Context, userID string, token [32]byte
 	return nil
 }
 
-func (r *Repository) CheckToken(ctx context.Context, token [32]byte) (userID int, err error) {
+func (r *Repository) CheckToken(ctx context.Context, token []byte) (userID int, err error) {
 
-	row := r.pool.QueryRow(ctx, "SELECT user_id FROM tokens WHERE token_hash=$1", token)
+	row := r.pool.QueryRow(ctx, "SELECT user_id FROM tokens WHERE token_hash=($1)", token)
 
 	err = row.Scan(&userID)
 	if err != nil {
@@ -89,7 +93,28 @@ func (r *Repository) CheckToken(ctx context.Context, token [32]byte) (userID int
 	return userID, nil
 }
 
-func (r *Repository) SendMessage(ctx context.Context, To, From, Message string) error {
+func (r *Repository) GetUsers(ctx context.Context) ([]model.UserFromDB, error) {
 
-	r.pool.Exec(ctx, "INSERT INTO users_chats ()")
+	var user model.UserFromDB
+	var users []model.UserFromDB
+
+	rows, err := r.pool.Query(ctx, "SELECT id, name, login FROM users")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+
+		if err = rows.Scan(&user.ID, &user.Name, &user.Login); err != nil {
+			log.Println(err)
+		}
+		users = append(users, user)
+	}
+
+	if rows.Err() != nil {
+		return users, rows.Err()
+	}
+
+	return users, nil
 }

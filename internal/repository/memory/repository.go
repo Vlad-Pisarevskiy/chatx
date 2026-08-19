@@ -58,6 +58,6 @@ func (r *Repository) AddToken(ctx context.Context, userID string, token [32]byte
 	return nil
 }
 
-func (r *Repository) CheckToken(ctx context.Context, token [32]byte) (userID int, err error) {
+func (r *Repository) CheckToken(ctx context.Context, token []byte) (userID int, err error) {
 	return 0, nil
 }

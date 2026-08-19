@@ -24,3 +24,7 @@ func Port() string {
 func Host() string {
 	return values["HOST"]
 }
+
+func DBPath() string {
+	return values["DATABASE_URL"]
+}
