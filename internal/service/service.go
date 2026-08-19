@@ -90,12 +90,7 @@ func (s *Service) LoginUser(ctx context.Context, login, password string) (*model
 		return nil, "", err
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return nil, "", err
-	}
-
-	if err = bcrypt.CompareHashAndPassword([]byte(user.Password), hash); err != nil {
+	if err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		return nil, "", err
 	}
 

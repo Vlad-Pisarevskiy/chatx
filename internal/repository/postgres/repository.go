@@ -56,7 +56,7 @@ func (r *Repository) FindUserByLogin(ctx context.Context, login string) (*model.
 	err := row.Scan(&client)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, errors1.ErrLoginNotFound
+			return nil, errors1.ErrIncorrectLoginData
 		}
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (r *Repository) AddToken(ctx context.Context, userID string, token [32]byte
 
 func (r *Repository) CheckToken(ctx context.Context, token [32]byte) (userID int, err error) {
 
-	row := r.pool.QueryRow(ctx, "SELECT user_id FROM sessions WHERE token_hash=$1", token)
+	row := r.pool.QueryRow(ctx, "SELECT user_id FROM tokens WHERE token_hash=$1", token)
 
 	err = row.Scan(&userID)
 	if err != nil {
