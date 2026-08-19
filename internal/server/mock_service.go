@@ -18,7 +18,7 @@ func NewMockService(db service.Repository) *MockService {
 
 func (m *MockService) RegisterUser(ctx context.Context, name, login, password string) error {
 
-	var client = model.Client{
+	var client = model.User{
 		Name:     name,
 		Login:    login,
 		Password: password,
@@ -31,7 +31,7 @@ func (m *MockService) RegisterUser(ctx context.Context, name, login, password st
 	return nil
 }
 
-func (m *MockService) LoginUser(ctx context.Context, login, password string) (*model.Client, string, error) {
+func (m *MockService) LoginUser(ctx context.Context, login, password string) (*model.User, string, error) {
 
 	user, err := m.db.FindUserByLogin(ctx, login)
 	if err != nil {

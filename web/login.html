@@ -107,6 +107,7 @@ form.addEventListener("submit", async (event) => {
       form.hidden = true;
       message.dataset.ok = "";
       message.textContent = "Вы вошли";
+      location.assign("/users");
       return;
     }
 

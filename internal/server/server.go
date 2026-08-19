@@ -17,7 +17,7 @@ import (
 
 type Service interface {
 	RegisterUser(ctx context.Context, name, login, password string) error
-	LoginUser(ctx context.Context, login, password string) (*model.Client, string, error)
+	LoginUser(ctx context.Context, login, password string) (*model.User, string, error)
 	CheckToken(ctx context.Context, token string) (int, error)
 }
 
@@ -58,8 +58,8 @@ func (s *Server) GetRouter() *gin.Engine {
 	}
 
 	ws := r.Group("/ws")
-	//ws.Use(s.authorization())
-	ws.Use(s.login())
+	ws.Use(s.authorization())
+	//ws.Use(s.login())
 	ws.GET("/", s.Run)
 
 	return r
@@ -89,7 +89,7 @@ func (s *Server) Register(c *gin.Context) {
 		registerRequest.Password,
 	); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
-			"error": err,
+			"error": err.Error(),
 		})
 		return
 	}
@@ -116,7 +116,7 @@ func (s *Server) Login(c *gin.Context) {
 
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error:": err,
+			"error:": err.Error(),
 		})
 		return
 	}
@@ -134,7 +134,7 @@ func (s *Server) Login(c *gin.Context) {
 
 func (s *Server) Run(c *gin.Context) {
 
-	userID, ok := c.Get(userLoginKey)
+	userID, ok := c.Get(userIdKey)
 	if !ok {
 		log.Println("unexpected error")
 		return
@@ -153,20 +153,6 @@ func (s *Server) Run(c *gin.Context) {
 
 	s.handle(id, conn)
 }
-
-//func (s *Server) removeConn(userID string, conn *websocket.Conn) {
-//
-//	conns := make([]*websocket.Conn, 0, len(s.conns[userID]))
-//	copy(conns, s.conns[userID])
-//
-//	for i, c := range conns {
-//		if c == conn {
-//			conns = append(conns[:i], conns[i+1:]...)
-//		}
-//	}
-//
-//	s.conns[userID] = conns
-//}
 
 func (s *Server) handle(userID string, conn *websocket.Conn) {
 
@@ -191,7 +177,6 @@ func (s *Server) handle(userID string, conn *websocket.Conn) {
 	s.reader(conn, msgChan, done)
 }
 
-// TODO: reader должен прочитать сообщение, через пакет протокола распарсить его, отправить данные в writer функцию
 func (s *Server) reader(conn *websocket.Conn, msgChan chan protocol.SendMessage, done chan struct{}) {
 
 	defer conn.Close()
@@ -219,7 +204,9 @@ func (s *Server) reader(conn *websocket.Conn, msgChan chan protocol.SendMessage,
 				To:      "",
 				Message: "Пользователя нет в сети",
 			}
+			continue
 		}
+
 		s.conns[sendMessage.To] <- sendMessage
 		s.mu.Unlock()
 
@@ -231,7 +218,6 @@ func (s *Server) reader(conn *websocket.Conn, msgChan chan protocol.SendMessage,
 	}
 }
 
-// TODO: writer должен прочитать сообщение, понять кому оно адресовано, проитерироваться по всем соединениям получателя и зааписать в них сообщение
 func (s *Server) writer(conn *websocket.Conn, msgChan chan protocol.SendMessage, done chan struct{}) {
 
 	ticker := time.NewTicker(tickerTiming)
@@ -291,6 +277,7 @@ func (s *Server) authorization() gin.HandlerFunc {
 				"error": "authorization error",
 			})
 			c.Abort()
+			return
 		}
 
 		c.Set(userIdKey, id)
@@ -308,3 +295,17 @@ func (s *Server) login() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+//func (s *Server) removeConn(userID string, conn *websocket.Conn) {
+//
+//	conns := make([]*websocket.Conn, 0, len(s.conns[userID]))
+//	copy(conns, s.conns[userID])
+//
+//	for i, c := range conns {
+//		if c == conn {
+//			conns = append(conns[:i], conns[i+1:]...)
+//		}
+//	}
+//
+//	s.conns[userID] = conns
+//}

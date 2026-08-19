@@ -21,11 +21,12 @@ const (
 )
 
 type Repository interface {
-	RegisterUser(ctx context.Context, client model.Client) error
+	RegisterUser(ctx context.Context, client model.User) error
 	LoginExists(ctx context.Context, userLogin string) (bool, error)
-	FindUserByLogin(ctx context.Context, login string) (*model.Client, error)
+	FindUserByLogin(ctx context.Context, login string) (*model.User, error)
 	AddToken(ctx context.Context, userID string, token [32]byte) error
 	CheckToken(ctx context.Context, token [32]byte) (userID int, err error)
+	SendMessage(ctx context.Context, From, To, Message string) error
 }
 
 type Service struct {
@@ -38,7 +39,7 @@ func NewService(repo Repository) *Service {
 
 func (s *Service) RegisterUser(ctx context.Context, name, login, password string) error {
 
-	var client = model.Client{
+	var client = model.User{
 		Name:     name,
 		Login:    login,
 		Password: password,
@@ -79,7 +80,7 @@ func (s *Service) RegisterUser(ctx context.Context, name, login, password string
 	return nil
 }
 
-func (s *Service) LoginUser(ctx context.Context, login, password string) (*model.Client, string, error) {
+func (s *Service) LoginUser(ctx context.Context, login, password string) (*model.User, string, error) {
 
 	if err := s.correctLogin(login); err != nil {
 		return nil, "", err

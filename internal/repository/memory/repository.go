@@ -10,19 +10,19 @@ import (
 type login string
 
 type Repository struct {
-	users map[login]*model.Client
+	users map[login]*model.User
 	mu    sync.Mutex
 }
 
 func NewRepository() *Repository {
 
 	return &Repository{
-		users: make(map[login]*model.Client),
+		users: make(map[login]*model.User),
 		mu:    sync.Mutex{},
 	}
 }
 
-func (r *Repository) RegisterUser(ctx context.Context, client model.Client) error {
+func (r *Repository) RegisterUser(ctx context.Context, client model.User) error {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -42,7 +42,7 @@ func (r *Repository) LoginExists(ctx context.Context, userLogin string) (bool, e
 	return ok, nil
 }
 
-func (r *Repository) FindUserByLogin(ctx context.Context, userLogin string) (*model.Client, error) {
+func (r *Repository) FindUserByLogin(ctx context.Context, userLogin string) (*model.User, error) {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()

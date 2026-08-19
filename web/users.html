@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Пользователи</title>
+<style>
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    height: 100vh;
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: #201e1d;
+    background: #f3f2f2;
+  }
+
+  aside {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: #fff;
+    border-right: 1px solid #c9c7c7;
+  }
+
+  aside header { padding: 16px; border-bottom: 1px solid #e4e2e2; }
+  aside h1 { margin: 0; font-size: 18px; }
+  .me { margin: 4px 0 0; font-size: 13px; color: #6b6867; }
+
+  #users { flex: 1; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+  #users li { border-bottom: 1px solid #f0eeee; }
+
+  .user {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    padding: 12px 16px;
+    font: inherit;
+    text-align: left;
+    background: none;
+    border: 0;
+    cursor: pointer;
+  }
+  .user:hover { background: #f7f6f6; }
+  .user.active { background: #e6f4f8; box-shadow: inset 3px 0 0 #0088b0; }
+
+  .name { font-weight: 500; }
+  .login { font-size: 13px; color: #6b6867; }
+
+  .unread {
+    width: 8px;
+    height: 8px;
+    margin-left: auto;
+    background: #c2334d;
+    border-radius: 50%;
+  }
+
+  .empty { padding: 16px; font-size: 14px; color: #6b6867; }
+
+  .chat { display: flex; flex-direction: column; min-height: 0; }
+
+  .chat header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    background: #fff;
+    border-bottom: 1px solid #c9c7c7;
+  }
+  .chat h2 { margin: 0; font-size: 18px; }
+
+  #status { margin-left: auto; font-size: 13px; color: #6b6867; }
+  #status[data-live] { color: #2e7d4f; }
+  #status a { color: #0088b0; }
+
+  #messages {
+    flex: 1;
+    margin: 0;
+    padding: 16px;
+    overflow-y: auto;
+    list-style: none;
+  }
+
+  .msg {
+    max-width: 60%;
+    margin-bottom: 8px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+  .msg.mine { margin-left: auto; color: #fff; background: #0088b0; }
+  .msg.theirs { background: #fff; border: 1px solid #e4e2e2; }
+  .msg.system {
+    max-width: none;
+    margin: 8px 0;
+    padding: 0;
+    font-size: 13px;
+    color: #6b6867;
+    text-align: center;
+  }
+
+  #placeholder {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 16px;
+    color: #6b6867;
+  }
+
+  form {
+    display: flex;
+    gap: 8px;
+    padding: 16px;
+    background: #fff;
+    border-top: 1px solid #c9c7c7;
+  }
+
+  input {
+    flex: 1;
+    padding: 10px;
+    font: inherit;
+    background: #fff;
+    border: 1px solid #c9c7c7;
+    border-radius: 2px;
+  }
+  input:focus-visible { border-color: #0088b0; outline: 1px solid #0088b0; }
+
+  button[type="submit"] {
+    padding: 10px 20px;
+    font: inherit;
+    color: #fff;
+    background: #0088b0;
+    border: 0;
+    border-radius: 2px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<aside>
+  <header>
+    <h1>Пользователи</h1>
+    {{if .Me}}<p class="me">Вы вошли как {{.Me}}</p>{{end}}
+  </header>
+
+  <ul id="users">
+    {{range .Users}}
+    <li>
+      <button type="button" class="user" data-id="{{.ID}}" data-name="{{.Name}}">
+        <span class="name">{{.Name}}</span>
+        <span class="login">{{.Login}}</span>
+        <span class="unread" hidden></span>
+      </button>
+    </li>
+    {{else}}
+    <li class="empty">Кроме вас пока никто не зарегистрирован</li>
+    {{end}}
+  </ul>
+</aside>
+
+<section class="chat">
+  <header>
+    <h2 id="peer">Выберите собеседника</h2>
+    <span id="status">соединение…</span>
+  </header>
+
+  <ol id="messages" hidden></ol>
+  <p id="placeholder">Выберите человека слева, чтобы написать ему</p>
+
+  <form id="form" hidden>
+    <input id="text" type="text" placeholder="Сообщение" autocomplete="off" required>
+    <button type="submit">Отправить</button>
+  </form>
+</section>
+
+<script>
+"use strict";
+
+const usersEl = document.getElementById("users");
+const messagesEl = document.getElementById("messages");
+const placeholderEl = document.getElementById("placeholder");
+const formEl = document.getElementById("form");
+const textEl = document.getElementById("text");
+const peerEl = document.getElementById("peer");
+const statusEl = document.getElementById("status");
+
+// id собеседника -> массив реплик. Переписка живёт только в памяти вкладки:
+// сервер историю не хранит, после F5 лента будет пустой.
+const history = new Map();
+
+let currentTo = null;
+let socket = null;
+let reconnectDelay = 1000;
+let everConnected = false;
+let failedAttempts = 0;
+
+// --- выбор собеседника ---
+
+usersEl.addEventListener("click", (event) => {
+  const button = event.target.closest(".user");
+  if (button) selectUser(button.dataset.id, button.dataset.name);
+});
+
+function selectUser(id, name) {
+  currentTo = id;
+  peerEl.textContent = name;
+
+  for (const button of usersEl.querySelectorAll(".user")) {
+    const active = button.dataset.id === id;
+    button.classList.toggle("active", active);
+    if (active) button.querySelector(".unread").hidden = true;
+  }
+
+  placeholderEl.hidden = true;
+  messagesEl.hidden = false;
+  formEl.hidden = false;
+
+  messagesEl.replaceChildren();
+  for (const message of history.get(id) || []) messagesEl.append(bubble(message));
+  scrollDown();
+  textEl.focus();
+}
+
+// --- лента ---
+
+function bubble(message) {
+  const li = document.createElement("li");
+  li.className = "msg " + message.kind;
+  li.textContent = message.text; // textContent, а не innerHTML: текст приходит от другого пользователя
+  return li;
+}
+
+function scrollDown() {
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function push(peerId, message) {
+  if (!history.has(peerId)) history.set(peerId, []);
+  history.get(peerId).push(message);
+
+  if (peerId === currentTo) {
+    messagesEl.append(bubble(message));
+    scrollDown();
+    return;
+  }
+
+  const button = usersEl.querySelector('.user[data-id="' + CSS.escape(peerId) + '"]');
+  if (button) button.querySelector(".unread").hidden = false;
+}
+
+function note(text) {
+  if (currentTo) push(currentTo, { kind: "system", text: text });
+}
+
+// --- сокет ---
+
+function connect() {
+  const scheme = location.protocol === "https:" ? "wss" : "ws";
+  // Именно "/ws/" со слэшем: маршрут объявлен как ws.GET("/"), а на "/ws" gin ответит
+  // редиректом — обычный запрос он бы дослал, но WebSocket-хендшейк редирект не переживает.
+  socket = new WebSocket(scheme + "://" + location.host + "/ws/");
+
+  socket.addEventListener("open", () => {
+    everConnected = true;
+    failedAttempts = 0;
+    reconnectDelay = 1000;
+    setStatus("на связи", true);
+  });
+
+  socket.addEventListener("message", (event) => receive(event.data));
+
+  socket.addEventListener("error", () => socket.close());
+
+  socket.addEventListener("close", () => {
+    failedAttempts += 1;
+
+    // Ни одного успешного соединения — почти наверняка мидлвэйр не пустил: куки нет или истекла.
+    if (!everConnected && failedAttempts >= 3) {
+      statusEl.removeAttribute("data-live");
+      statusEl.replaceChildren("сессия истекла — ");
+      const link = document.createElement("a");
+      link.href = "/login";
+      link.textContent = "войти заново";
+      statusEl.append(link);
+      return;
+    }
+
+    setStatus("нет связи, переподключаюсь…", false);
+    setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, 15000);
+  });
+}
+
+function setStatus(text, live) {
+  statusEl.textContent = text;
+  if (live) statusEl.dataset.live = "";
+  else statusEl.removeAttribute("data-live");
+}
+
+function receive(raw) {
+  const parsed = tryParse(raw);
+
+  // Сейчас writer шлёт голый текст, отправитель теряется. Если он начнёт слать protocol.SendMessage
+  // целиком — раскладываем по чатам, и пустой from читаем как служебное сообщение сервера.
+  if (parsed && typeof parsed.message === "string") {
+    if (parsed.from) push(String(parsed.from), { kind: "theirs", text: parsed.message });
+    else note(parsed.message);
+    return;
+  }
+
+  if (currentTo) push(currentTo, { kind: "theirs", text: raw });
+}
+
+function tryParse(raw) {
+  try {
+    const value = JSON.parse(raw);
+    return value && typeof value === "object" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+// --- отправка ---
+
+formEl.addEventListener("submit", (event) => {
+  event.preventDefault();
+
+  const text = textEl.value.trim();
+  if (!text || !currentTo) return;
+
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    note("Нет связи с сервером, сообщение не отправлено");
+    return;
+  }
+
+  // to — строковый id получателя: пул соединений на сервере ключуется id из токена, не логином.
+  socket.send(JSON.stringify({ from: "", to: currentTo, message: text }));
+
+  // Своё сообщение сервер обратно не присылает — рисуем сами.
+  push(currentTo, { kind: "mine", text: text });
+
+  textEl.value = "";
+  textEl.focus();
+});
+
+connect();
+</script>
+
+</body>
+</html>

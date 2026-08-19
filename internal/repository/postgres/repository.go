@@ -19,7 +19,7 @@ func NewRepository(ctx context.Context, pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
-func (r *Repository) RegisterUser(ctx context.Context, client model.Client) error {
+func (r *Repository) RegisterUser(ctx context.Context, client model.User) error {
 
 	_, err := r.pool.Exec(ctx, "INSERT INTO users(name, login, password) VALUES ($1, $2, $3)",
 		client.Name, client.Login, client.Password)
@@ -47,9 +47,9 @@ func (r *Repository) LoginExists(ctx context.Context, login string) (bool, error
 	return true, nil
 }
 
-func (r *Repository) FindUserByLogin(ctx context.Context, login string) (*model.Client, error) {
+func (r *Repository) FindUserByLogin(ctx context.Context, login string) (*model.User, error) {
 
-	var client model.Client
+	var client model.User
 
 	row := r.pool.QueryRow(ctx, "SELECT id, name, login, password FROM users WHERE login=$1", login)
 
@@ -87,4 +87,9 @@ func (r *Repository) CheckToken(ctx context.Context, token [32]byte) (userID int
 	}
 
 	return userID, nil
+}
+
+func (r *Repository) SendMessage(ctx context.Context, To, From, Message string) error {
+
+	r.pool.Exec(ctx, "INSERT INTO users_chats ()")
 }
