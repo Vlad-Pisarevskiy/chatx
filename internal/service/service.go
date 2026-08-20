@@ -3,6 +3,7 @@ package service
 import (
 	errors1 "chatflow/internal/app-errors"
 	"chatflow/internal/model"
+	"chatflow/internal/repository/postgres"
 	"context"
 	rand "crypto/rand"
 	"crypto/sha256"
@@ -20,21 +21,11 @@ const (
 	maxNameLength = 50
 )
 
-type Repository interface {
-	RegisterUser(ctx context.Context, client model.User) error
-	LoginExists(ctx context.Context, userLogin string) (bool, error)
-	FindUserByLogin(ctx context.Context, login string) (*model.User, error)
-	AddToken(ctx context.Context, userID string, token []byte) error
-	CheckToken(ctx context.Context, token []byte) (userID int, err error)
-	GetUsers(ctx context.Context) ([]model.UserFromDB, error)
-	//	SendMessage(ctx context.Context, From, To, Message string) error
-}
-
 type Service struct {
-	db Repository
+	db *postgres.Repository
 }
 
-func NewService(repo Repository) *Service {
+func NewService(repo *postgres.Repository) *Service {
 	return &Service{db: repo}
 }
 
@@ -117,7 +108,17 @@ func (s *Service) CheckToken(ctx context.Context, token string) (int, error) {
 	return id, nil
 }
 
-func (s *Service) GetUsers(ctx context.Context) ([]model.UserFromDB, error) {
+func (s *Service) FindUserByID(ctx context.Context, id int) (*model.UserFromDB, error) {
+
+	user, err := s.db.FindUserByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
+}
+
+func (s *Service) GetUsers(ctx context.Context) ([]*model.UserFromDB, error) {
 
 	users, err := s.db.GetUsers(ctx)
 	if err != nil {
@@ -125,6 +126,11 @@ func (s *Service) GetUsers(ctx context.Context) ([]model.UserFromDB, error) {
 	}
 
 	return users, nil
+}
+
+func (s *Service) GetUsersExcept(ctx context.Context, id int) ([]*model.UserFromDB, error) {
+
+	return s.db.GetUsersExcept(ctx, id)
 }
 
 func (s *Service) hashPassword(password string) (string, error) {
