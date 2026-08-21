@@ -340,8 +340,10 @@ formEl.addEventListener("submit", (event) => {
     return;
   }
 
-  // to — строковый id получателя: пул соединений на сервере ключуется id из токена, не логином.
-  socket.send(JSON.stringify({ from: "", to: currentTo, message: text }));
+  // from не шлём: отправителя сервер знает сам из токена, клиенту тут верить нельзя.
+  // to приводим к числу: currentTo всюду хранится строкой (dataset отдаёт только строки),
+  // а в protocol.SendMessage поле To — int, и json.Unmarshal строку в int не приводит.
+  socket.send(JSON.stringify({ to: Number(currentTo), message: text }));
 
   // Своё сообщение сервер обратно не присылает — рисуем сами.
   push(currentTo, { kind: "mine", text: text });

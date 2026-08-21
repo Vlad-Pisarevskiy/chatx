@@ -15,4 +15,5 @@ const (
 
 	userIdKey    = "userID"
 	userLoginKey = "userLogin"
+	tokenKey     = "token"
 )

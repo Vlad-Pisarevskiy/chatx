@@ -24,17 +24,17 @@ import (
 //	GetUsersExcept(ctx context.Context, id int) ([]*model.UserFromDB, error)
 //	ChatExists(ctx context.Context, from, to int) (bool, error)
 //	StartChat(ctx context.Context, from, to int) (int, error)
-//	SendMessage(ctx context.Context, chatID, from int, message string) error
+//	SentMessage(ctx context.Context, chatID, from int, message string) error
 //}
 
 type Server struct {
 	upgrader websocket.Upgrader
-	service  service.Service
-	conns    map[int]chan protocol.SendMessage
+	service  *service.Service
+	conns    map[int]chan protocol.SentMessage
 	mu       sync.RWMutex
 }
 
-func NewServer(srv service.Service) *Server {
+func NewServer(srv *service.Service) *Server {
 
 	return &Server{
 		upgrader: websocket.Upgrader{
@@ -44,7 +44,7 @@ func NewServer(srv service.Service) *Server {
 				return true
 			},
 		},
-		conns:   make(map[int]chan protocol.SendMessage, msgBufferSize),
+		conns:   make(map[int]chan protocol.SentMessage, msgBufferSize),
 		service: srv}
 }
 
@@ -198,7 +198,7 @@ func (s *Server) Run(c *gin.Context) {
 
 func (s *Server) handle(userID int, conn *websocket.Conn) {
 
-	msgChan := make(chan protocol.SendMessage, msgBufferSize) // Канал для связи между горутинами
+	msgChan := make(chan protocol.SentMessage, msgBufferSize) // Канал для связи между горутинами
 
 	s.mu.Lock()
 	s.conns[userID] = msgChan
@@ -216,85 +216,77 @@ func (s *Server) handle(userID int, conn *websocket.Conn) {
 
 	go s.writer(conn, msgChan, done)
 
-	s.reader(conn, msgChan, done)
+	s.reader(conn, msgChan, done, userID)
 }
 
-func (s *Server) reader(conn *websocket.Conn, msgChan chan protocol.SendMessage, done chan struct{}) {
+func (s *Server) reader(conn *websocket.Conn, msgChan chan protocol.SentMessage, done chan struct{}, userID int) {
 
-	defer conn.Close()
+	defer func(conn *websocket.Conn) {
+		_ = conn.Close()
+	}(conn)
+
 	defer close(msgChan)
 	defer close(done)
 
 	for {
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			log.Println(err)
-			done <- struct{}{}
-			return
-		}
-
-		var sendMessage protocol.SendMessage
-		if err = json.Unmarshal(message, &sendMessage); err != nil {
-			log.Println(err)
-			return
-		}
-
-		if err = s.service.SendMessage(context.Background(), sendMessage); err != nil {
-			log.Println(err)
-			return
-		}
-
-		s.mu.Lock()
-
-		if _, ok := s.conns[sendMessage.To]; ok {
-			s.conns[sendMessage.To] <- sendMessage
-		}
-
-		s.mu.Unlock()
-
-		if err = conn.SetReadDeadline(time.Now().Add(readDeadline)); err != nil {
-			log.Println(err)
-			done <- struct{}{}
-			return
-		}
+		s.readMessage(conn, userID, done)
 	}
 }
 
-func (s *Server) writer(conn *websocket.Conn, msgChan chan protocol.SendMessage, done chan struct{}) {
+func (s *Server) readMessage(conn *websocket.Conn, userID int, done chan struct{}) {
+
+	_, message, err := conn.ReadMessage()
+	if err != nil {
+		log.Println(err)
+		done <- struct{}{}
+		return
+	}
+
+	var sentMessage protocol.SentMessage
+	if err = json.Unmarshal(message, &sentMessage); err != nil {
+		log.Println(err)
+		return
+	}
+
+	if err = s.service.SendMessage(context.Background(), sentMessage, userID); err != nil {
+		log.Println(err)
+		return
+	}
+
+	s.sendToUser(sentMessage)
+
+	if err = conn.SetReadDeadline(time.Now().Add(readDeadline)); err != nil {
+		log.Println(err)
+		done <- struct{}{}
+		return
+	}
+}
+
+func (s *Server) sendToUser(message protocol.SentMessage) {
+
+	s.mu.Lock()
+	if _, ok := s.conns[message.To]; ok {
+		s.conns[message.To] <- message
+	}
+	s.mu.Unlock()
+}
+
+func (s *Server) writer(conn *websocket.Conn, msgChan chan protocol.SentMessage, done chan struct{}) {
 
 	ticker := time.NewTicker(tickerTiming)
+
 	defer ticker.Stop()
-	defer conn.Close()
+	defer func(conn *websocket.Conn) {
+		_ = conn.Close()
+	}(conn)
 
 	for {
 		select {
 		case msg, ok := <-msgChan:
-
-			if !ok {
-				return
-			}
-
-			if err := conn.WriteMessage(websocket.TextMessage, []byte(msg.Message)); err != nil {
-				log.Println(err)
-				return
-			}
-
-			if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
-				log.Println(err)
-				return
-			}
+			sendMessage(conn, msg, ok)
 
 		case <-ticker.C:
-
-			if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
-				log.Println(err)
-				return
-			}
-
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				log.Println(err)
-				return
-			}
+			sendTicker(conn)
 
 		case <-done:
 			return
@@ -302,10 +294,40 @@ func (s *Server) writer(conn *websocket.Conn, msgChan chan protocol.SendMessage,
 	}
 }
 
+func sendMessage(conn *websocket.Conn, msg protocol.SentMessage, ok bool) {
+
+	if !ok {
+		return
+	}
+
+	if err := conn.WriteMessage(websocket.TextMessage, []byte(msg.Message)); err != nil {
+		log.Println(err)
+		return
+	}
+
+	if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
+		log.Println(err)
+		return
+	}
+}
+
+func sendTicker(conn *websocket.Conn) {
+
+	if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
+		log.Println(err)
+		return
+	}
+
+	if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+		log.Println(err)
+		return
+	}
+}
+
 func (s *Server) authorization() gin.HandlerFunc {
 	return func(c *gin.Context) {
 
-		token, err := c.Cookie("token")
+		token, err := c.Cookie(tokenKey)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "missing token",
@@ -329,9 +351,8 @@ func (s *Server) authorization() gin.HandlerFunc {
 }
 
 func (s *Server) pageAuthorization() gin.HandlerFunc {
-
 	return func(c *gin.Context) {
-		token, err := c.Cookie("token")
+		token, err := c.Cookie(tokenKey)
 		if err != nil {
 			c.Redirect(http.StatusFound, "/login")
 			c.Abort()

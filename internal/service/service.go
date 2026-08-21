@@ -12,16 +12,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const (
-	minLoginLength = 3
-	maxLoginLength = 20
-
-	minPasswordLength = 4
-	maxPasswordLength = 50
-
-	maxNameLength = 50
-)
-
 type Service struct {
 	db *postgres.Repository
 }
@@ -76,12 +66,12 @@ func (s *Service) RegisterUser(ctx context.Context, name, login, password string
 func (s *Service) LoginUser(ctx context.Context, login, password string) (*model.User, string, error) {
 
 	if err := s.correctLogin(login); err != nil {
-		return nil, "", err
+		return nil, emptyToken, err
 	}
 
 	user, err := s.db.FindUserByLogin(ctx, login)
 	if err != nil {
-		return nil, "", err
+		return nil, emptyToken, err
 	}
 
 	if err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
@@ -92,7 +82,7 @@ func (s *Service) LoginUser(ctx context.Context, login, password string) (*model
 	tokenHash := sha256.Sum256([]byte(token))
 
 	if err = s.db.AddToken(ctx, user.ID, tokenHash[:]); err != nil {
-		return nil, "", err
+		return nil, emptyToken, err
 	}
 
 	return user, token, err
@@ -103,7 +93,7 @@ func (s *Service) CheckToken(ctx context.Context, token string) (int, error) {
 	tokenHash := sha256.Sum256([]byte(token))
 	id, err := s.db.CheckToken(ctx, tokenHash[:])
 	if err != nil {
-		return 0, err
+		return emptyID, err
 	}
 
 	return id, nil
@@ -134,21 +124,21 @@ func (s *Service) GetUsersExcept(ctx context.Context, id int) ([]*model.UserFrom
 	return s.db.GetUsersExcept(ctx, id)
 }
 
-func (s *Service) SendMessage(ctx context.Context, message protocol.SendMessage) error {
+func (s *Service) SendMessage(ctx context.Context, message protocol.SentMessage, from int) error {
 
-	chatID, ok, err := s.db.ChatExists(ctx, message.From, message.To)
+	chatID, ok, err := s.db.ChatExists(ctx, from, message.To)
 	if err != nil {
 		return err
 	}
 
 	if !ok {
-		chatID, err = s.db.StartChat(ctx, message.From, message.To)
+		chatID, err = s.db.StartChat(ctx, from, message.To)
 		if err != nil {
 			return err
 		}
 	}
 
-	if err = s.db.SendMessage(ctx, chatID, message.From, message.Message); err != nil {
+	if err = s.db.SendMessage(ctx, chatID, from, message.Message); err != nil {
 		return err
 	}
 
@@ -158,14 +148,14 @@ func (s *Service) SendMessage(ctx context.Context, message protocol.SendMessage)
 func (s *Service) hashPassword(password string) (string, error) {
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return "", err
+		return emptyHash, err
 	}
 	return string(hashedPassword), nil
 }
 
 func (s *Service) correctName(name string) error {
 
-	if name == "" {
+	if name == emptyName {
 		return errors1.ErrEmptyName
 	}
 
@@ -178,7 +168,7 @@ func (s *Service) correctName(name string) error {
 
 func (s *Service) correctLogin(login string) error {
 
-	if login == "" {
+	if login == emptyLogin {
 		return errors1.ErrEmptyLogin
 	}
 
@@ -195,7 +185,7 @@ func (s *Service) correctLogin(login string) error {
 
 func (s *Service) correctPassword(password string) error {
 
-	if password == "" {
+	if password == emptyPassword {
 		return errors1.ErrEmptyPassword
 	}
 

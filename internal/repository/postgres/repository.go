@@ -154,18 +154,20 @@ func (r *Repository) GetUsers(ctx context.Context) ([]*model.UserFromDB, error) 
 func (r *Repository) ChatExists(ctx context.Context, from int, to int) (int, bool, error) {
 
 	row := r.pool.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM chats c 
+		`SELECT c.id FROM chats c 
     		JOIN users_chats u ON c.id = u.chat_id
-       		WHERE u.user_id IN ($1, $2)), id FROM chats`, from, to)
+       		WHERE u.user_id = $1 OR u.user_id = $2`, from, to)
 
-	var exists bool
 	var chatID int
 
-	if err := row.Scan(&exists, &chatID); err != nil {
-		return chatID, exists, err
+	if err := row.Scan(&chatID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, false, nil
+		}
+		return chatID, true, err
 	}
 
-	return chatID, exists, nil
+	return chatID, true, nil
 }
 
 func (r *Repository) StartChat(ctx context.Context, from, to int) (int, error) {
@@ -174,7 +176,9 @@ func (r *Repository) StartChat(ctx context.Context, from, to int) (int, error) {
 	if err != nil {
 		return zeroInt, err
 	}
-	defer tx.Rollback(ctx)
+	defer func(tx pgx.Tx, ctx context.Context) {
+		_ = tx.Rollback(ctx)
+	}(tx, ctx)
 
 	var chatID int
 	if err = tx.QueryRow(ctx, `INSERT INTO chats DEFAULT VALUES RETURNING id`).Scan(&chatID); err != nil {
@@ -192,7 +196,7 @@ func (r *Repository) StartChat(ctx context.Context, from, to int) (int, error) {
 func (r *Repository) SendMessage(ctx context.Context, chatID, from int, message string) error {
 
 	_, err := r.pool.Exec(ctx, `INSERT INTO messages(chat_id, sender_id, data, created_at)
-							VALUES($1, $2, $3, $4))`, chatID, from, message, time.Now())
+							VALUES($1, $2, $3, $4)`, chatID, from, message, time.Now())
 	if err != nil {
 		return err
 	}

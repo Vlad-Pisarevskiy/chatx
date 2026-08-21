@@ -38,14 +38,14 @@ func TestServer_Websocket(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusSwitchingProtocols, r.StatusCode)
 
-	message := protocol.SendMessage{
+	message := protocol.SentMessage{
 		To:      "user2",
 		Message: "Hello From User 1",
 	}
 	data, err := json.Marshal(message)
 	assert.Nil(t, err)
 
-	message2 := protocol.SendMessage{
+	message2 := protocol.SentMessage{
 		To:      "user2",
 		Message: "Hello From User 3",
 	}

@@ -3,15 +3,15 @@ package server
 import (
 	errors1 "chatflow/internal/app-errors"
 	"chatflow/internal/model"
-	"chatflow/internal/service"
+	"chatflow/internal/repository/postgres"
 	"context"
 )
 
 type MockService struct {
-	db service.Repository
+	db postgres.Repository
 }
 
-func NewMockService(db service.Repository) *MockService {
+func NewMockService(db postgres.Repository) *MockService {
 
 	return &MockService{db: db}
 }
