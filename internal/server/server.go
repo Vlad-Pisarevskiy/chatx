@@ -248,12 +248,7 @@ func (s *Server) readMessage(conn *websocket.Conn, userID int, done chan struct{
 		return
 	}
 
-	if err = s.service.SendMessage(context.Background(), sentMessage, userID); err != nil {
-		log.Println(err)
-		return
-	}
-
-	s.sendToUser(sentMessage)
+	s.sendToUser(sentMessage, userID)
 
 	if err = conn.SetReadDeadline(time.Now().Add(readDeadline)); err != nil {
 		log.Println(err)
@@ -378,16 +373,16 @@ func (s *Server) pageAuthorization() gin.HandlerFunc {
 	}
 }
 
-func login() gin.HandlerFunc {
-
-	return func(c *gin.Context) {
-
-		login := c.Query("login")
-
-		c.Set(userLoginKey, login)
-		c.Next()
-	}
-}
+//func login() gin.HandlerFunc {
+//
+//	return func(c *gin.Context) {
+//
+//		login := c.Query("login")
+//
+//		c.Set(userLoginKey, login)
+//		c.Next()
+//	}
+//}
 
 //func (s *Server) removeConn(userID string, conn *websocket.Conn) {
 //

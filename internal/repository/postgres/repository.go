@@ -154,9 +154,11 @@ func (r *Repository) GetUsers(ctx context.Context) ([]*model.UserFromDB, error) 
 func (r *Repository) ChatExists(ctx context.Context, from int, to int) (int, bool, error) {
 
 	row := r.pool.QueryRow(ctx,
-		`SELECT c.id FROM chats c 
-    		JOIN users_chats u ON c.id = u.chat_id
-       		WHERE u.user_id = $1 OR u.user_id = $2`, from, to)
+		`SELECT chat_id                                                                                                                                                                      
+  			 FROM users_chats                                                                                                                                                                    
+			 WHERE user_id IN ($1, $2)                                                                                                                                                           
+  			 GROUP BY chat_id                                                                                                                                                                    
+  			 HAVING count(*) = 2`, from, to)
 
 	var chatID int
 
