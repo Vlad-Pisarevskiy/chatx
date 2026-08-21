@@ -262,7 +262,12 @@ func (s *Server) readMessage(conn *websocket.Conn, userID int, done chan struct{
 	}
 }
 
-func (s *Server) sendToUser(message protocol.SentMessage) {
+func (s *Server) sendToUser(message protocol.SentMessage, userID int) {
+
+	if err := s.service.SendMessage(context.Background(), message, userID); err != nil {
+		log.Println(err)
+		return
+	}
 
 	s.mu.Lock()
 	if _, ok := s.conns[message.To]; ok {
