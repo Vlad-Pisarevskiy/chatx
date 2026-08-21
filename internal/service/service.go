@@ -3,6 +3,7 @@ package service
 import (
 	errors1 "chatflow/internal/app-errors"
 	"chatflow/internal/model"
+	"chatflow/internal/protocol"
 	"chatflow/internal/repository/postgres"
 	"context"
 	rand "crypto/rand"
@@ -131,6 +132,27 @@ func (s *Service) GetUsers(ctx context.Context) ([]*model.UserFromDB, error) {
 func (s *Service) GetUsersExcept(ctx context.Context, id int) ([]*model.UserFromDB, error) {
 
 	return s.db.GetUsersExcept(ctx, id)
+}
+
+func (s *Service) SendMessage(ctx context.Context, message protocol.SendMessage) error {
+
+	chatID, ok, err := s.db.ChatExists(ctx, message.From, message.To)
+	if err != nil {
+		return err
+	}
+
+	if !ok {
+		chatID, err = s.db.StartChat(ctx, message.From, message.To)
+		if err != nil {
+			return err
+		}
+	}
+
+	if err = s.db.SendMessage(ctx, chatID, message.From, message.Message); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (s *Service) hashPassword(password string) (string, error) {

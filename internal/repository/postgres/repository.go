@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -150,23 +151,24 @@ func (r *Repository) GetUsers(ctx context.Context) ([]*model.UserFromDB, error) 
 	return users, nil
 }
 
-func (r *Repository) ChatExists(ctx context.Context, from int, to int) (bool, error) {
+func (r *Repository) ChatExists(ctx context.Context, from int, to int) (int, bool, error) {
 
 	row := r.pool.QueryRow(ctx,
 		`SELECT EXISTS(SELECT 1 FROM chats c 
     		JOIN users_chats u ON c.id = u.chat_id
-       		WHERE u.user_id IN ($1, $2))`, from, to)
+       		WHERE u.user_id IN ($1, $2)), id FROM chats`, from, to)
 
 	var exists bool
+	var chatID int
 
-	if err := row.Scan(&exists); err != nil {
-		return exists, err
+	if err := row.Scan(&exists, &chatID); err != nil {
+		return chatID, exists, err
 	}
 
-	return exists, nil
+	return chatID, exists, nil
 }
 
-func (r *Repository) StartChat(ctx context.Context, from int, to int) (int, error) {
+func (r *Repository) StartChat(ctx context.Context, from, to int) (int, error) {
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -185,6 +187,17 @@ func (r *Repository) StartChat(ctx context.Context, from int, to int) (int, erro
 	}
 
 	return chatID, tx.Commit(ctx)
+}
+
+func (r *Repository) SendMessage(ctx context.Context, chatID, from int, message string) error {
+
+	_, err := r.pool.Exec(ctx, `INSERT INTO messages(chat_id, sender_id, data, created_at)
+							VALUES($1, $2, $3, $4))`, chatID, from, message, time.Now())
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func scanRows(rows pgx.Rows, users []*model.UserFromDB) ([]*model.UserFromDB, error) {

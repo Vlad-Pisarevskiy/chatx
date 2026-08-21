@@ -1,8 +1,8 @@
 package server
 
 import (
-	"chatflow/internal/model"
 	"chatflow/internal/protocol"
+	"chatflow/internal/service"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,21 +15,26 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-type Service interface {
-	RegisterUser(ctx context.Context, name, login, password string) error
-	LoginUser(ctx context.Context, login, password string) (*model.User, string, error)
-	CheckToken(ctx context.Context, token string) (int, error)
-	GetUsers(ctx context.Context) ([]model.UserFromDB, error)
-}
+//type Service interface {
+//	RegisterUser(ctx context.Context, name, login, password string) error
+//	LoginUser(ctx context.Context, login, password string) (*model.User, string, error)
+//	CheckToken(ctx context.Context, token string) (int, error)
+//	GetUsers(ctx context.Context) ([]*model.UserFromDB, error)
+//	FindUserByID(ctx context.Context, id int) (*model.UserFromDB, error)
+//	GetUsersExcept(ctx context.Context, id int) ([]*model.UserFromDB, error)
+//	ChatExists(ctx context.Context, from, to int) (bool, error)
+//	StartChat(ctx context.Context, from, to int) (int, error)
+//	SendMessage(ctx context.Context, chatID, from int, message string) error
+//}
 
 type Server struct {
 	upgrader websocket.Upgrader
-	service  Service
-	conns    map[string]chan protocol.SendMessage
+	service  service.Service
+	conns    map[int]chan protocol.SendMessage
 	mu       sync.RWMutex
 }
 
-func NewServer(srv Service) *Server {
+func NewServer(srv service.Service) *Server {
 
 	return &Server{
 		upgrader: websocket.Upgrader{
@@ -39,7 +44,7 @@ func NewServer(srv Service) *Server {
 				return true
 			},
 		},
-		conns:   make(map[string]chan protocol.SendMessage, msgBufferSize),
+		conns:   make(map[int]chan protocol.SendMessage, msgBufferSize),
 		service: srv}
 }
 
@@ -80,7 +85,23 @@ func (s *Server) Authorization(c *gin.Context) {
 
 func (s *Server) Chats(c *gin.Context) {
 
-	users, err := s.service.GetUsers(c.Request.Context())
+	id, ok := c.Get(userIdKey)
+	if !ok {
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": "no such user",
+		})
+		return
+	}
+
+	users, err := s.service.GetUsersExcept(c.Request.Context(), id.(int))
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	me, err := s.service.FindUserByID(c.Request.Context(), id.(int))
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": err.Error(),
@@ -90,6 +111,7 @@ func (s *Server) Chats(c *gin.Context) {
 
 	c.HTML(http.StatusOK, "users.html", gin.H{
 		"Users": users,
+		"Me":    me.Name,
 	})
 }
 
@@ -167,14 +189,14 @@ func (s *Server) Run(c *gin.Context) {
 	}
 
 	// Добавляем соединение в пул
-	id := fmt.Sprint(userID)
+	id := userID.(int)
 
 	//defer s.removeConn(id, conn)
 
 	s.handle(id, conn)
 }
 
-func (s *Server) handle(userID string, conn *websocket.Conn) {
+func (s *Server) handle(userID int, conn *websocket.Conn) {
 
 	msgChan := make(chan protocol.SendMessage, msgBufferSize) // Канал для связи между горутинами
 
@@ -217,17 +239,17 @@ func (s *Server) reader(conn *websocket.Conn, msgChan chan protocol.SendMessage,
 			return
 		}
 
-		s.mu.Lock()
-		if _, ok := s.conns[sendMessage.To]; !ok {
-			msgChan <- protocol.SendMessage{
-				From:    "",
-				To:      "",
-				Message: "Пользователя нет в сети",
-			}
-			continue
+		if err = s.service.SendMessage(context.Background(), sendMessage); err != nil {
+			log.Println(err)
+			return
 		}
 
-		s.conns[sendMessage.To] <- sendMessage
+		s.mu.Lock()
+
+		if _, ok := s.conns[sendMessage.To]; ok {
+			s.conns[sendMessage.To] <- sendMessage
+		}
+
 		s.mu.Unlock()
 
 		if err = conn.SetReadDeadline(time.Now().Add(readDeadline)); err != nil {
@@ -307,6 +329,7 @@ func (s *Server) authorization() gin.HandlerFunc {
 }
 
 func (s *Server) pageAuthorization() gin.HandlerFunc {
+
 	return func(c *gin.Context) {
 		token, err := c.Cookie("token")
 		if err != nil {
@@ -329,7 +352,7 @@ func (s *Server) pageAuthorization() gin.HandlerFunc {
 	}
 }
 
-func (s *Server) login() gin.HandlerFunc {
+func login() gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 

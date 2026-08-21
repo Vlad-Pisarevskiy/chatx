@@ -1,7 +1,7 @@
 package model
 
 type User struct {
-	ID       string
+	ID       int
 	Name     string
 	Login    string
 	Password string
@@ -14,7 +14,7 @@ type Message struct {
 }
 
 type UserFromDB struct {
-	ID    string
+	ID    int
 	Name  string
 	Login string
 }

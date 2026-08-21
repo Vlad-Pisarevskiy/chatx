@@ -1,7 +1,7 @@
 package protocol
 
 type SendMessage struct {
-	From    string `json:"from"`
-	To      string `json:"to"`
+	From    int    `json:"from"`
+	To      int    `json:"to"`
 	Message string `json:"message"`
 }

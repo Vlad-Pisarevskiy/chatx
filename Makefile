@@ -14,8 +14,11 @@ integration:
 client:
 	go run cmd/client/client.go
 
-compose:
+compose-up:
 	docker compose up -d
+
+compose-down:
+	docker compose down
 
 migrate-up:
 	go tool goose up
