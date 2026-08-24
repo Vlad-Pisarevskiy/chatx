@@ -32,7 +32,7 @@ func (s *Service) RegisterUser(ctx context.Context, name, login, password string
 		return err
 	}
 
-	hash, err := s.hashPassword(user.Password)
+	hash, err := hashPassword(user.Password)
 	if err != nil {
 		return err
 	}
@@ -40,27 +40,6 @@ func (s *Service) RegisterUser(ctx context.Context, name, login, password string
 	user.Password = hash
 
 	if err = s.db.RegisterUser(ctx, user); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *Service) validateUserRegister(ctx context.Context, user model.User) error {
-
-	if err := correctLogin(user.Login); err != nil {
-		return err
-	}
-
-	if err := s.db.LoginExists(ctx, user.Login); err != nil {
-		return err
-	}
-
-	if err := correctName(user.Name); err != nil {
-		return err
-	}
-
-	if err := correctPassword(user.Password); err != nil {
 		return err
 	}
 
@@ -149,7 +128,33 @@ func (s *Service) SendMessage(ctx context.Context, message protocol.SentMessage,
 	return nil
 }
 
-func (s *Service) hashPassword(password string) (string, error) {
+func (s *Service) LoadMessages(ctx context.Context, from, to int) ([]model.Message, error) {
+
+	return s.db.LoadMessages(ctx, from, to)
+}
+
+func (s *Service) validateUserRegister(ctx context.Context, user model.User) error {
+
+	if err := correctLogin(user.Login); err != nil {
+		return err
+	}
+
+	if err := s.db.LoginExists(ctx, user.Login); err != nil {
+		return err
+	}
+
+	if err := correctName(user.Name); err != nil {
+		return err
+	}
+
+	if err := correctPassword(user.Password); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func hashPassword(password string) (string, error) {
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return emptyHash, err

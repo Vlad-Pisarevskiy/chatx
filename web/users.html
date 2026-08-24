@@ -140,6 +140,9 @@
     border-radius: 2px;
     cursor: pointer;
   }
+  [hidden] {
+    display: none !important;
+  }
 </style>
 </head>
 <body>
@@ -208,14 +211,17 @@ usersEl.addEventListener("click", (event) => {
   if (button) selectUser(button.dataset.id, button.dataset.name);
 });
 
-function selectUser(id, name) {
+async function selectUser(id, name) {
   currentTo = id;
   peerEl.textContent = name;
 
   for (const button of usersEl.querySelectorAll(".user")) {
     const active = button.dataset.id === id;
     button.classList.toggle("active", active);
-    if (active) button.querySelector(".unread").hidden = true;
+
+    if (active) {
+      button.querySelector(".unread").hidden = true;
+    }
   }
 
   placeholderEl.hidden = true;
@@ -223,8 +229,9 @@ function selectUser(id, name) {
   formEl.hidden = false;
 
   messagesEl.replaceChildren();
-  for (const message of history.get(id) || []) messagesEl.append(bubble(message));
-  scrollDown();
+
+  await loadMessages(id);
+
   textEl.focus();
 }
 
@@ -353,6 +360,43 @@ formEl.addEventListener("submit", (event) => {
 });
 
 connect();
+
+// История сообщений
+async function loadMessages(userId) {
+  try {
+    const response = await fetch(`/users/${userId}/messages`);
+
+    if (!response.ok) {
+      throw new Error("Не удалось загрузить сообщения");
+    }
+
+    const messages = await response.json();
+
+    history.set(userId, []);
+
+    for (const message of messages) {
+      const kind = Number(message.from) === Number(myUserId)
+              ? "mine"
+              : "theirs";
+
+      history.get(userId).push({
+        kind: kind,
+        text: message.data
+      });
+    }
+
+    messagesEl.replaceChildren();
+
+    for (const message of history.get(userId)) {
+      messagesEl.append(bubble(message));
+    }
+
+    scrollDown();
+
+  } catch (err) {
+    console.error(err);
+  }
+}
 </script>
 
 </body>

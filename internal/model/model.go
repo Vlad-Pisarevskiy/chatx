@@ -1,5 +1,9 @@
 package model
 
+import (
+	"time"
+)
+
 type User struct {
 	ID       int
 	Name     string
@@ -8,9 +12,9 @@ type User struct {
 }
 
 type Message struct {
-	From string
-	To   string
-	Data string
+	From      int
+	Data      string
+	CreatedAt time.Time
 }
 
 type UserFromDB struct {

@@ -209,6 +209,53 @@ func (r *Repository) SendMessage(ctx context.Context, chatID, from int, message 
 	return nil
 }
 
+func (r *Repository) LoadMessages(ctx context.Context, from, to int) ([]model.Message, error) {
+
+	var messages []model.Message
+	var chatID int
+	if err := r.pool.QueryRow(ctx,
+		`SELECT uc1.chat_id
+			 FROM users_chats uc1
+			 JOIN users_chats uc2 ON uc1.chat_id = uc2.chat_id
+			 WHERE uc1.user_id = $1 AND uc2.user_id = $2;`, from, to).Scan(&chatID); err != nil {
+		return nil, err
+	}
+
+	rows, err := r.pool.Query(ctx,
+		`SELECT
+				m.sender_id,
+				m.data,
+				m.created_at
+			 FROM messages m
+			 JOIN users_chats uc ON uc.chat_id = m.chat_id
+			 WHERE uc.user_id = $1 AND m.chat_id = $2
+			 ORDER BY m.created_at;
+			`, from, chatID)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var message model.Message
+		if err = rows.Scan(
+			&message.From,
+			&message.Data,
+			&message.CreatedAt); err != nil {
+			return nil, err
+		}
+
+		messages = append(messages, message)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return messages, nil
+}
+
 func scanRows(rows pgx.Rows, users []*model.UserFromDB) ([]*model.UserFromDB, error) {
 
 	for rows.Next() {

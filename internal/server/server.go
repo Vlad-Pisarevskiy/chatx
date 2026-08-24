@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -68,9 +69,10 @@ func (s *Server) GetRouter() *gin.Engine {
 	//ws.Use(s.login())
 	ws.GET("/", s.Run)
 
-	u := r.Group("")
+	u := r.Group("/users")
 	u.Use(s.pageAuthorization())
-	u.GET("/users", s.Chats)
+	u.GET("/", s.Chats)
+	u.GET("/:userID/messages", s.LoadMessages)
 
 	return r
 }
@@ -112,6 +114,38 @@ func (s *Server) Chats(c *gin.Context) {
 	c.HTML(http.StatusOK, "users.html", gin.H{
 		"Users": users,
 		"Me":    me.Name,
+	})
+}
+
+func (s *Server) LoadMessages(c *gin.Context) {
+
+	userFrom, ok := c.Get(userIdKey)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "unknown user",
+		})
+		return
+	}
+
+	userTo := c.Param("userID")
+	userID, err := strconv.Atoi(userTo)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "unknown user id",
+		})
+		return
+	}
+
+	messages, err := s.service.LoadMessages(c.Request.Context(), userFrom.(int), userID)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"Messages": messages,
 	})
 }
 
@@ -286,7 +320,7 @@ func (s *Server) writer(conn *websocket.Conn, msgChan chan protocol.SentMessage,
 			sendMessage(conn, msg, ok)
 
 		case <-ticker.C:
-			sendTicker(conn)
+			sendTick(conn)
 
 		case <-done:
 			return
@@ -311,7 +345,7 @@ func sendMessage(conn *websocket.Conn, msg protocol.SentMessage, ok bool) {
 	}
 }
 
-func sendTicker(conn *websocket.Conn) {
+func sendTick(conn *websocket.Conn) {
 
 	if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
 		log.Println(err)
