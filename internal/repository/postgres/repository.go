@@ -18,7 +18,7 @@ type Repository struct {
 
 const zeroInt = 0
 
-func NewRepository(ctx context.Context, pool *pgxpool.Pool) *Repository {
+func NewRepository(pool *pgxpool.Pool) *Repository {
 
 	return &Repository{pool: pool}
 }
@@ -34,18 +34,21 @@ func (r *Repository) RegisterUser(ctx context.Context, client model.User) error 
 	return nil
 }
 
-func (r *Repository) LoginExists(ctx context.Context, login string) (bool, error) {
+func (r *Repository) LoginExists(ctx context.Context, login string) error {
 
-	row := r.pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM users WHERE login = $1)", login)
+	row := r.pool.QueryRow(ctx, "SELECT login FROM users WHERE login = $1", login)
 
-	var exists bool
+	var dbLogin string
 
-	err := row.Scan(&exists)
+	err := row.Scan(&dbLogin)
 	if err != nil {
-		return exists, err
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errors1.ErrExistsLogin
+		}
+		return err
 	}
 
-	return exists, nil
+	return nil
 }
 
 func (r *Repository) FindUserByLogin(ctx context.Context, login string) (*model.User, error) {

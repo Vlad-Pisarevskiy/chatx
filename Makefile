@@ -5,7 +5,7 @@ GOOSE_DRIVER ?= postgres
 GOOSE_DBSTRING ?= $(DATABASE_URL)
 GOOSE_MIGRATION_DIR ?= migrations
 
-server:
+chat:
 	go run cmd/chatx/main.go
 
 integration:

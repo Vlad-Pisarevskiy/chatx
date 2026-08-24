@@ -22,41 +22,45 @@ func NewService(repo *postgres.Repository) *Service {
 
 func (s *Service) RegisterUser(ctx context.Context, name, login, password string) error {
 
-	var client = model.User{
+	var user = model.User{
 		Name:     name,
 		Login:    login,
 		Password: password,
 	}
 
-	if err := s.correctLogin(client.Login); err != nil {
+	if err := s.validateUserRegister(ctx, user); err != nil {
 		return err
 	}
 
-	exists, err := s.db.LoginExists(ctx, client.Login)
+	hash, err := s.hashPassword(user.Password)
 	if err != nil {
 		return err
 	}
 
-	if exists {
-		return errors1.ErrExistsLogin
-	}
+	user.Password = hash
 
-	if err = s.correctName(client.Name); err != nil {
+	if err = s.db.RegisterUser(ctx, user); err != nil {
 		return err
 	}
 
-	if err = s.correctPassword(client.Password); err != nil {
+	return nil
+}
+
+func (s *Service) validateUserRegister(ctx context.Context, user model.User) error {
+
+	if err := correctLogin(user.Login); err != nil {
 		return err
 	}
 
-	hash, err := s.hashPassword(client.Password)
-	if err != nil {
+	if err := s.db.LoginExists(ctx, user.Login); err != nil {
 		return err
 	}
 
-	client.Password = hash
+	if err := correctName(user.Name); err != nil {
+		return err
+	}
 
-	if err = s.db.RegisterUser(ctx, client); err != nil {
+	if err := correctPassword(user.Password); err != nil {
 		return err
 	}
 
@@ -65,7 +69,7 @@ func (s *Service) RegisterUser(ctx context.Context, name, login, password string
 
 func (s *Service) LoginUser(ctx context.Context, login, password string) (*model.User, string, error) {
 
-	if err := s.correctLogin(login); err != nil {
+	if err := correctLogin(login); err != nil {
 		return nil, emptyToken, err
 	}
 
@@ -153,7 +157,7 @@ func (s *Service) hashPassword(password string) (string, error) {
 	return string(hashedPassword), nil
 }
 
-func (s *Service) correctName(name string) error {
+func correctName(name string) error {
 
 	if name == emptyName {
 		return errors1.ErrEmptyName
@@ -166,7 +170,7 @@ func (s *Service) correctName(name string) error {
 	return nil
 }
 
-func (s *Service) correctLogin(login string) error {
+func correctLogin(login string) error {
 
 	if login == emptyLogin {
 		return errors1.ErrEmptyLogin
@@ -183,7 +187,7 @@ func (s *Service) correctLogin(login string) error {
 	return nil
 }
 
-func (s *Service) correctPassword(password string) error {
+func correctPassword(password string) error {
 
 	if password == emptyPassword {
 		return errors1.ErrEmptyPassword

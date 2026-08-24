@@ -1,8 +1,11 @@
 package server
 
 import (
+	"chatflow/config"
 	"chatflow/internal/protocol"
-	"chatflow/internal/repository/memory"
+	"chatflow/internal/repository/postgres"
+	service2 "chatflow/internal/service"
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -11,13 +14,18 @@ import (
 	"testing"
 
 	"github.com/gorilla/websocket"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestServer_Websocket(t *testing.T) {
 
-	repository := memory.NewRepository()
-	service := NewMockService(repository)
+	pool, err := pgxpool.New(context.Background(), config.DBPath())
+	assert.Nil(t, err)
+	defer pool.Close()
+
+	repository := postgres.NewRepository(context.Background(), pool)
+	service := service2.NewService(repository)
 	server := NewServer(service)
 
 	router := server.GetRouter()
@@ -39,14 +47,14 @@ func TestServer_Websocket(t *testing.T) {
 	assert.Equal(t, http.StatusSwitchingProtocols, r.StatusCode)
 
 	message := protocol.SentMessage{
-		To:      "user2",
+		To:      1,
 		Message: "Hello From User 1",
 	}
 	data, err := json.Marshal(message)
 	assert.Nil(t, err)
 
 	message2 := protocol.SentMessage{
-		To:      "user2",
+		To:      2,
 		Message: "Hello From User 3",
 	}
 	data2, err := json.Marshal(message2)
