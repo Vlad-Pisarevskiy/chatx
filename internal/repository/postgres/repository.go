@@ -214,10 +214,11 @@ func (r *Repository) LoadMessages(ctx context.Context, from, to int) ([]model.Me
 	var messages []model.Message
 	var chatID int
 	if err := r.pool.QueryRow(ctx,
-		`SELECT uc1.chat_id
-			 FROM users_chats uc1
-			 JOIN users_chats uc2 ON uc1.chat_id = uc2.chat_id
-			 WHERE uc1.user_id = $1 AND uc2.user_id = $2;`, from, to).Scan(&chatID); err != nil {
+		`SELECT chat_id                                                                                                                                                                      
+  			 FROM users_chats                                                                                                                                                                    
+			 WHERE user_id IN ($1, $2)                                                                                                                                                           
+  			 GROUP BY chat_id                                                                                                                                                                    
+  			 HAVING COUNT(*) = 2`, from, to).Scan(&chatID); err != nil {
 		return nil, err
 	}
 

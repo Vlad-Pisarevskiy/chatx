@@ -114,6 +114,7 @@ func (s *Server) Chats(c *gin.Context) {
 	c.HTML(http.StatusOK, "users.html", gin.H{
 		"Users": users,
 		"Me":    me.Name,
+		"MyID":  me.ID,
 	})
 }
 
@@ -144,9 +145,7 @@ func (s *Server) LoadMessages(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"Messages": messages,
-	})
+	c.JSON(http.StatusOK, messages)
 }
 
 func (s *Server) Register(c *gin.Context) {

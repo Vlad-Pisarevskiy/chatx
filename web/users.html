@@ -149,8 +149,17 @@
 
 <aside>
   <header>
-    <h1>Пользователи</h1>
-    {{if .Me}}<p class="me">Вы вошли как {{.Me}}</p>{{end}}
+    <header>
+      <h1>Пользователи</h1>
+
+      {{if .Me}}
+      <p class="me">Вы вошли как {{.Me}}</p>
+      {{end}}
+
+      <script>
+        const myUserId = {{.MyID}};
+      </script>
+    </header>
   </header>
 
   <ul id="users">
@@ -371,6 +380,8 @@ async function loadMessages(userId) {
     }
 
     const messages = await response.json();
+
+    console.log("messages from server:", messages);
 
     history.set(userId, []);
 

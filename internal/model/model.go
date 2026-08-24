@@ -12,9 +12,9 @@ type User struct {
 }
 
 type Message struct {
-	From      int
-	Data      string
-	CreatedAt time.Time
+	From      int       `json:"from"`
+	Data      string    `json:"data"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type UserFromDB struct {
