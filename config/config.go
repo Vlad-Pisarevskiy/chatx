@@ -1,6 +1,7 @@
 package config
 
 import (
+	errors1 "chatflow/internal/app-errors"
 	"log"
 	"os"
 
@@ -13,6 +14,10 @@ func InitConfig() {
 		if !os.IsNotExist(err) {
 			log.Fatal(err)
 		}
+	}
+
+	if DBPath() == "" {
+		log.Fatal(errors1.ErrEmptyDatabasePath)
 	}
 }
 

@@ -264,32 +264,35 @@ func (s *Server) reader(conn *websocket.Conn, msgChan chan protocol.SentMessage,
 	defer close(done)
 
 	for {
-		s.readMessage(conn, userID, done)
+		if err := s.readMessage(conn, userID, done); err != nil {
+			log.Println(err)
+			break
+		}
 	}
 }
 
-func (s *Server) readMessage(conn *websocket.Conn, userID int, done chan struct{}) {
+func (s *Server) readMessage(conn *websocket.Conn, userID int, done chan struct{}) error {
 
 	_, message, err := conn.ReadMessage()
 	if err != nil {
-		log.Println(err)
 		done <- struct{}{}
-		return
+		return err
 	}
 
 	var sentMessage protocol.SentMessage
 	if err = json.Unmarshal(message, &sentMessage); err != nil {
 		log.Println(err)
-		return
+		return nil
 	}
 
 	s.sendToUser(sentMessage, userID)
 
 	if err = conn.SetReadDeadline(time.Now().Add(readDeadline)); err != nil {
-		log.Println(err)
 		done <- struct{}{}
-		return
+		return err
 	}
+
+	return nil
 }
 
 func (s *Server) sendToUser(message protocol.SentMessage, userID int) {

@@ -6,7 +6,7 @@ GOOSE_DBSTRING ?= $(DATABASE_URL)
 GOOSE_MIGRATION_DIR ?= migrations
 
 chat:
-	go run cmd/chatx/main.go
+	go run cmd/chat/main.go
 
 integration:
 	go test ./internal/test/

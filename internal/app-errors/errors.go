@@ -25,3 +25,5 @@ var ErrLongName = errors.New("name is too long")
 var ErrExistsLogin = errors.New("login is already exists")
 
 var ErrIncorrectLoginData = errors.New("login or password is incorrect")
+
+var ErrEmptyDatabasePath = errors.New("empty database path")
