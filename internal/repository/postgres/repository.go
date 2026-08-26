@@ -84,6 +84,7 @@ func (r *Repository) FindUserByID(ctx context.Context, id int) (*model.UserFromD
 		}
 		return nil, err
 	}
+
 	return &user, nil
 }
 

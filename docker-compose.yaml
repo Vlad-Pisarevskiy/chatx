@@ -16,5 +16,28 @@ services:
       timeout: 5s
       retries: 5
 
+  chat:
+    build: ./
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+    environment:
+      PORT: 8001
+      DATABASE_URL: postgres://user:password@postgres:5432/chat_db?sslmode=disable
+
+  migrator:
+    build: ./
+    entrypoint: ["./migrate"]
+    restart: no
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://user:password@postgres:5432/chat_db?sslmode=disable
+
 volumes:
   pgdata:

@@ -2,29 +2,28 @@ package config
 
 import (
 	"log"
+	"os"
 
 	"github.com/joho/godotenv"
 )
 
-var values map[string]string
-
 func InitConfig() {
 	var err error
-	values, err = godotenv.Read(".env")
-
-	if err != nil {
-		log.Fatalf("error to read config: %v", err)
+	if err = godotenv.Load(".env"); err != nil {
+		if !os.IsNotExist(err) {
+			log.Fatal(err)
+		}
 	}
 }
 
 func Port() string {
-	return values["PORT"]
+	return os.Getenv("PORT")
 }
 
 func Host() string {
-	return values["HOST"]
+	return os.Getenv("HOST")
 }
 
 func DBPath() string {
-	return values["DATABASE_URL"]
+	return os.Getenv("DATABASE_URL")
 }

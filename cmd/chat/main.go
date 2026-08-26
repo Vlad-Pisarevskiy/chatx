@@ -15,8 +15,8 @@ import (
 func main() {
 
 	config.InitConfig()
-
 	pool, err := pgxpool.New(context.Background(), config.DBPath())
+
 	if err != nil {
 		log.Fatal(err)
 	}

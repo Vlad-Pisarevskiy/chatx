@@ -28,7 +28,7 @@ func (s *Service) RegisterUser(ctx context.Context, name, login, password string
 		Password: password,
 	}
 
-	if err := s.validateUserRegister(ctx, user); err != nil {
+	if err := s.validateRegister(ctx, user); err != nil {
 		return err
 	}
 
@@ -94,12 +94,8 @@ func (s *Service) FindUserByID(ctx context.Context, id int) (*model.UserFromDB, 
 
 func (s *Service) GetUsers(ctx context.Context) ([]*model.UserFromDB, error) {
 
-	users, err := s.db.GetUsers(ctx)
-	if err != nil {
-		return nil, err
-	}
+	return s.db.GetUsers(ctx)
 
-	return users, nil
 }
 
 func (s *Service) GetUsersExcept(ctx context.Context, id int) ([]*model.UserFromDB, error) {
@@ -133,7 +129,7 @@ func (s *Service) LoadMessages(ctx context.Context, from, to int) ([]model.Messa
 	return s.db.LoadMessages(ctx, from, to)
 }
 
-func (s *Service) validateUserRegister(ctx context.Context, user model.User) error {
+func (s *Service) validateRegister(ctx context.Context, user model.User) error {
 
 	if err := correctLogin(user.Login); err != nil {
 		return err
