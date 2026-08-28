@@ -18,7 +18,7 @@ type Repository struct {
 
 const zeroInt = 0
 
-func NewRepository(pool *pgxpool.Pool) *Repository {
+func New(pool *pgxpool.Pool) *Repository {
 
 	return &Repository{pool: pool}
 }

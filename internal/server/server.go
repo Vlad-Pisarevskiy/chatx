@@ -1,6 +1,7 @@
 package server
 
 import (
+	"chatflow/internal/hub"
 	"chatflow/internal/protocol"
 	"chatflow/internal/service"
 	"context"
@@ -9,7 +10,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -31,6 +31,7 @@ import (
 type Server struct {
 	upgrader websocket.Upgrader
 	service  *service.Service
+	hub      *hub.Hub
 }
 
 type Conn struct {
@@ -39,8 +40,7 @@ type Conn struct {
 	userID int
 }
 
-// TODO: Сервер выополняет слишком много функций как будто, надо подумаать как развести
-func NewServer(service *service.Service) *Server {
+func New(service *service.Service, hub *hub.Hub) *Server {
 
 	return &Server{
 		upgrader: websocket.Upgrader{
@@ -50,7 +50,8 @@ func NewServer(service *service.Service) *Server {
 				return true
 			},
 		},
-		service: service}
+		service: service,
+		hub:     hub}
 }
 
 func (s *Server) GetRouter() *gin.Engine {
@@ -235,7 +236,6 @@ func (s *Server) Run(c *gin.Context) {
 	//И отдельно: &Conn{...} создан прямо в литерале, указатель нигде не сохранён. Даже дописав removeConn, тебе нечего будет ему передать — ключ анонимный. Указатель надо положить в
 	//  переменную и протащить до места удаления (и до reader/writer, которые сейчас получают conn, msgChan, done, userID четырьмя параметрами — вместо этого логичнее передавать один
 	//  *Conn, ради него он и заводился).
-	//defer s.removeConn(id, conn)
 
 	s.handle(id, conn)
 }
@@ -244,15 +244,8 @@ func (s *Server) handle(userID int, conn *websocket.Conn) {
 
 	msgChan := make(chan protocol.SentMessage, msgBufferSize) // Канал для связи между горутинами
 
-	s.mu.Lock()
-	s.conns[userID] = map[*Conn]struct{}{ //TODO: идет затирание
-		&Conn{
-			ws:     conn,
-			ch:     msgChan,
-			userID: userID,
-		}: struct{}{},
-	}
-	s.mu.Unlock()
+	userConn := s.hub.Add(userID, conn, msgChan)
+	defer s.hub.RemoveConn(userConn)
 
 	done := make(chan struct{})
 
@@ -318,13 +311,7 @@ func (s *Server) sendToUser(message protocol.SentMessage, userID int) {
 		return
 	}
 
-	s.mu.Lock()
-	if _, ok := s.conns[message.To]; ok {
-		for k, _ := range s.conns[message.To] {
-			k.ch <- message
-		}
-	}
-	s.mu.Unlock()
+	s.hub.Send(message)
 
 }
 
@@ -430,18 +417,3 @@ func (s *Server) pageAuthorization() gin.HandlerFunc {
 		c.Next()
 	}
 }
-
-//TODO: Скорее всего придется реализовывать удаление конкретного соединения, функция будет нужна
-//func (s *Server) removeConn(userID string, conn *websocket.Conn) {
-//
-//	conns := make([]*websocket.Conn, 0, len(s.conns[userID]))
-//	copy(conns, s.conns[userID])
-//
-//	for i, c := range conns {
-//		if c == conn {
-//			conns = append(conns[:i], conns[i+1:]...)
-//		}
-//	}
-//
-//	s.conns[userID] = conns
-//}

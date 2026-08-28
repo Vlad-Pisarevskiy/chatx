@@ -2,6 +2,7 @@ package main
 
 import (
 	"chatflow/config"
+	hub2 "chatflow/internal/hub"
 	"chatflow/internal/repository/postgres"
 	server2 "chatflow/internal/server"
 	service2 "chatflow/internal/service"
@@ -22,9 +23,10 @@ func main() {
 	}
 	defer pool.Close()
 
-	repository := postgres.NewRepository(pool)
+	hub := hub2.New()
+	repository := postgres.New(pool)
 	service := service2.NewService(repository)
-	server := server2.NewServer(service)
+	server := server2.New(service, hub)
 
 	r := server.GetRouter()
 	if err = r.Run(fmt.Sprintf("%s:%s", config.Host(), config.Port())); err != nil {
