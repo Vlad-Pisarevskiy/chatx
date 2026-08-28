@@ -17,7 +17,6 @@ CREATE TABLE users_chats
     chat_id   INT REFERENCES chats (id),
     user_id   BIGINT REFERENCES users (id) ON DELETE CASCADE,
     last_read BIGINT,
-    PRIMARY KEY (chat_id, user_id)
 );
 
 CREATE TABLE messages
