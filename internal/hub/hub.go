@@ -68,20 +68,20 @@ func (h *Hub) RemoveConn(c *Conn) {
 
 func (h *Hub) Close() {
 
+	h.mu.Lock()
 	conns := make([]*Conn, 0, len(h.conns))
 
-	h.mu.Lock()
 	for _, k := range h.conns {
 		conn := slices.Collect(maps.Keys(k))
 		conns = append(conns, conn...)
 	}
 
 	h.conns = map[int]map[*Conn]struct{}{}
-
 	h.mu.Unlock()
 
+	deadline := time.Now().Add(time.Second)
 	for _, c := range conns {
-		if err := c.ws.WriteControl(websocket.CloseMessage, []byte("server shutdown"), time.Now().Add(time.Second)); err != nil {
+		if err := c.ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutdown"), deadline); err != nil {
 			log.Println(err)
 		}
 		c.ws.Close()
