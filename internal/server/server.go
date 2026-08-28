@@ -31,8 +31,6 @@ import (
 type Server struct {
 	upgrader websocket.Upgrader
 	service  *service.Service
-	conns    map[int]map[*Conn]struct{}
-	mu       sync.RWMutex
 }
 
 type Conn struct {
@@ -52,7 +50,6 @@ func NewServer(service *service.Service) *Server {
 				return true
 			},
 		},
-		conns:   make(map[int]map[*Conn]struct{}, msgBufferSize),
 		service: service}
 }
 
