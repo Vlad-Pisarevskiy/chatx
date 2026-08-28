@@ -11,6 +11,9 @@ chat:
 integration:
 	go test ./internal/test/
 
+postgres:
+	docker compose -f docker-compose.postgres.yaml up
+
 client:
 	go run cmd/client/client.go
 

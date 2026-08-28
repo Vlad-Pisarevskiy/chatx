@@ -127,7 +127,7 @@ func (s *Server) Chats(c *gin.Context) {
 
 func (s *Server) Logout(c *gin.Context) {
 
-	token, err := c.Cookie("token")
+	token, err := c.Cookie(tokenKey)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -154,7 +154,7 @@ func (s *Server) LoadMessages(c *gin.Context) {
 		return
 	}
 
-	userTo := c.Param("userID")
+	userTo := c.Param(userIdKey)
 	userID, err := strconv.Atoi(userTo)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -228,7 +228,7 @@ func (s *Server) Login(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
 
 	// Задаем куки. Path определяет путь по которому будут работать куки. Secure определяет доступность для не https соединений
-	c.SetCookie("token", token, cookieMaxAge, "/", "", true, true)
+	c.SetCookie(tokenKey, token, cookieMaxAge, "/", "", true, true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"successful login": fmt.Sprintf("welcome, %s", user.Login),
@@ -250,18 +250,12 @@ func (s *Server) Run(c *gin.Context) {
 	}
 
 	id := userID.(int)
-
-	// TODO: Переделать и вернуть функцию
-	//И отдельно: &Conn{...} создан прямо в литерале, указатель нигде не сохранён. Даже дописав removeConn, тебе нечего будет ему передать — ключ анонимный. Указатель надо положить в
-	//  переменную и протащить до места удаления (и до reader/writer, которые сейчас получают conn, msgChan, done, userID четырьмя параметрами — вместо этого логичнее передавать один
-	//  *Conn, ради него он и заводился).
-
 	s.handle(id, conn)
 }
 
 func (s *Server) handle(userID int, conn *websocket.Conn) {
 
-	msgChan := make(chan protocol.SentMessage, msgBufferSize) // Канал для связи между горутинами
+	msgChan := make(chan protocol.SentMessage, msgBufferSize)
 
 	userConn := s.hub.Add(userID, conn, msgChan)
 	defer s.hub.RemoveConn(userConn)
@@ -363,16 +357,16 @@ func sendMessage(conn *websocket.Conn, msg protocol.SentMessage, ok bool) {
 		return
 	}
 
+	if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
+		log.Println(err)
+		return
+	}
+
 	if err := conn.WriteMessage(websocket.TextMessage, []byte(msg.Message)); err != nil {
 		log.Println(err)
 		return
 	}
 
-	//TODO: неправильный порядок надо сравниить с тиком и выровнять
-	if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
-		log.Println(err)
-		return
-	}
 }
 
 func sendTick(conn *websocket.Conn) {

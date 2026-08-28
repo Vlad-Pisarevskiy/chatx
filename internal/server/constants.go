@@ -13,7 +13,6 @@ const (
 	writeDeadline = time.Second * 30
 	tickerTiming  = time.Second * 25
 
-	userIdKey    = "userID"
-	userLoginKey = "userLogin"
-	tokenKey     = "token"
+	userIdKey = "userID"
+	tokenKey  = "token"
 )

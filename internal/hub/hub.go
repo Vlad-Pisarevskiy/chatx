@@ -2,12 +2,14 @@ package hub
 
 import (
 	"chatflow/internal/protocol"
+	"log"
+	"maps"
+	"slices"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
-
-const msgBufferSize = 256
 
 type Hub struct {
 	conns map[int]map[*Conn]struct{}
@@ -17,7 +19,7 @@ type Hub struct {
 func New() *Hub {
 
 	return &Hub{
-		conns: make(map[int]map[*Conn]struct{}, msgBufferSize),
+		conns: make(map[int]map[*Conn]struct{}),
 		mu:    sync.RWMutex{},
 	}
 }
@@ -62,4 +64,26 @@ func (h *Hub) RemoveConn(c *Conn) {
 	h.mu.Lock()
 	delete(h.conns[c.userID], c)
 	h.mu.Unlock()
+}
+
+func (h *Hub) Close() {
+
+	conns := make([]*Conn, 0, len(h.conns))
+
+	h.mu.Lock()
+	for _, k := range h.conns {
+		conn := slices.Collect(maps.Keys(k))
+		conns = append(conns, conn...)
+	}
+
+	h.conns = map[int]map[*Conn]struct{}{}
+
+	h.mu.Unlock()
+
+	for _, c := range conns {
+		if err := c.ws.WriteControl(websocket.CloseMessage, []byte("server shutdown"), time.Now().Add(time.Second)); err != nil {
+			log.Println(err)
+		}
+		c.ws.Close()
+	}
 }

@@ -16,7 +16,13 @@ type Repository struct {
 	pool *pgxpool.Pool
 }
 
-const zeroInt = 0
+const (
+	null   = 0
+	nullID = 0
+	nullChat
+	tokenTTL       = time.Hour * 24
+	tokenThreshold = time.Hour * 12
+)
 
 func New(pool *pgxpool.Pool) *Repository {
 
@@ -43,12 +49,12 @@ func (r *Repository) LoginExists(ctx context.Context, login string) error {
 	err := row.Scan(&dbLogin)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return errors1.ErrExistsLogin
+			return nil
 		}
 		return err
 	}
 
-	return nil
+	return errors1.ErrExistsLogin
 }
 
 func (r *Repository) FindUserByLogin(ctx context.Context, login string) (*model.User, error) {
@@ -109,11 +115,10 @@ func (r *Repository) GetUsersExcept(ctx context.Context, id int) ([]*model.UserF
 	return users, nil
 }
 
-// TODO: Проблема с токеном, он бессрочный, надо будет добавить когда он истекает и в целом реализовать механизм его продления и удаления
 func (r *Repository) AddToken(ctx context.Context, userID int, token []byte) error {
 
-	_, err := r.pool.Exec(ctx, `INSERT INTO tokens(user_id, token_hash) 
-									VALUES ($1, $2)`, userID, token)
+	_, err := r.pool.Exec(ctx, `INSERT INTO tokens(user_id, token_hash, created_at, expires_at) 
+									VALUES ($1, $2, $3, $4)`, userID, token, time.Now(), time.Now().Add(tokenTTL))
 	if err != nil {
 		return err
 	}
@@ -123,14 +128,20 @@ func (r *Repository) AddToken(ctx context.Context, userID int, token []byte) err
 
 func (r *Repository) CheckToken(ctx context.Context, token []byte) (userID int, err error) {
 
-	row := r.pool.QueryRow(ctx, "SELECT user_id FROM tokens WHERE token_hash=($1)", token)
+	row := r.pool.QueryRow(ctx, "SELECT user_id FROM tokens WHERE token_hash=($1) AND expires_at>$2", token, time.Now())
 
 	err = row.Scan(&userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, errors1.ErrInvalidToken
+			return nullID, errors1.ErrInvalidToken
 		}
 		return userID, err
+	}
+
+	_, err = r.pool.Exec(ctx, `UPDATE tokens SET expires_at = $1 WHERE token_hash = $2 AND expires_at < $3`,
+		time.Now().Add(tokenTTL), token, time.Now().Add(tokenThreshold))
+	if err != nil {
+		log.Println(err)
 	}
 
 	return userID, nil
@@ -180,7 +191,7 @@ func (r *Repository) ChatExists(ctx context.Context, from int, to int) (int, boo
 
 	if err := row.Scan(&chatID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, false, nil
+			return nullChat, false, nil
 		}
 		return chatID, true, err
 	}
@@ -192,7 +203,7 @@ func (r *Repository) StartChat(ctx context.Context, from, to int) (int, error) {
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return zeroInt, err
+		return nullChat, err
 	}
 	defer func(tx pgx.Tx, ctx context.Context) {
 		_ = tx.Rollback(ctx)
@@ -200,12 +211,12 @@ func (r *Repository) StartChat(ctx context.Context, from, to int) (int, error) {
 
 	var chatID int
 	if err = tx.QueryRow(ctx, `INSERT INTO chats DEFAULT VALUES RETURNING id`).Scan(&chatID); err != nil {
-		return zeroInt, err
+		return nullChat, err
 	}
 
 	_, err = tx.Exec(ctx, `INSERT INTO users_chats (chat_id, user_id) VALUES ($1, $2), ($1, $3)`, chatID, from, to)
 	if err != nil {
-		return zeroInt, err
+		return nullChat, err
 	}
 
 	return chatID, tx.Commit(ctx)
@@ -271,6 +282,16 @@ func (r *Repository) LoadMessages(ctx context.Context, from, to int) ([]model.Me
 	return messages, nil
 }
 
+func (r *Repository) DeleteExpiredTokens(ctx context.Context) (int64, error) {
+
+	tag, err := r.pool.Exec(ctx, `DELETE FROM tokens WHERE expires_at < $1`, time.Now())
+	if err != nil {
+		return null, err
+	}
+
+	return tag.RowsAffected(), nil
+}
+
 func scanRows(rows pgx.Rows, users []*model.UserFromDB) ([]*model.UserFromDB, error) {
 
 	for rows.Next() {
@@ -294,6 +315,3 @@ func scanRows(rows pgx.Rows, users []*model.UserFromDB) ([]*model.UserFromDB, er
 
 	return users, nil
 }
-
-//TODO: будет функция удаления токена
-// func
