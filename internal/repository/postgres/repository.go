@@ -112,7 +112,8 @@ func (r *Repository) GetUsersExcept(ctx context.Context, id int) ([]*model.UserF
 // TODO: Проблема с токеном, он бессрочный, надо будет добавить когда он истекает и в целом реализовать механизм его продления и удаления
 func (r *Repository) AddToken(ctx context.Context, userID int, token []byte) error {
 
-	_, err := r.pool.Exec(ctx, "INSERT INTO tokens(user_id, token_hash) VALUES ($1, $2)", userID, token)
+	_, err := r.pool.Exec(ctx, `INSERT INTO tokens(user_id, token_hash) 
+									VALUES ($1, $2)`, userID, token)
 	if err != nil {
 		return err
 	}
@@ -133,6 +134,16 @@ func (r *Repository) CheckToken(ctx context.Context, token []byte) (userID int, 
 	}
 
 	return userID, nil
+}
+
+func (r *Repository) RemoveToken(ctx context.Context, token []byte) error {
+
+	_, err := r.pool.Exec(ctx, `DELETE FROM tokens WHERE token_hash = $1`, token)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (r *Repository) GetUsers(ctx context.Context) ([]*model.UserFromDB, error) {

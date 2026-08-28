@@ -67,6 +67,7 @@ func (s *Server) GetRouter() *gin.Engine {
 	{
 		auth.POST("/register", s.Register)
 		auth.POST("/login", s.Login)
+		auth.POST("/logout", s.Logout)
 	}
 
 	ws := r.Group("/ws")
@@ -122,6 +123,24 @@ func (s *Server) Chats(c *gin.Context) {
 		"Me":    me.Name,
 		"MyID":  me.ID,
 	})
+}
+
+func (s *Server) Logout(c *gin.Context) {
+
+	token, err := c.Cookie("token")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+	}
+
+	if err = s.service.Logout(c.Request.Context(), token); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+	}
+
+	c.Status(http.StatusOK)
 }
 
 // TODO: Загрузка сообщений происходит по айди юзера, скорее всего надо будет на айди чата поменять

@@ -22,7 +22,7 @@ type RegisterInput struct {
 	Password string
 }
 
-func NewService(repo *postgres.Repository) *Service {
+func New(repo *postgres.Repository) *Service {
 	return &Service{db: repo}
 }
 
@@ -86,6 +86,16 @@ func (s *Service) CheckToken(ctx context.Context, token string) (int, error) {
 	}
 
 	return id, nil
+}
+
+func (s *Service) Logout(ctx context.Context, token string) error {
+
+	tokenHash := sha256.Sum256([]byte(token))
+	if err := s.db.RemoveToken(ctx, tokenHash[:]); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (s *Service) FindUserByID(ctx context.Context, id int) (*model.UserFromDB, error) {

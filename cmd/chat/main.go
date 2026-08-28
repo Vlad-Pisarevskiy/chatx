@@ -25,7 +25,7 @@ func main() {
 
 	hub := hub2.New()
 	repository := postgres.New(pool)
-	service := service2.NewService(repository)
+	service := service2.New(repository)
 	server := server2.New(service, hub)
 
 	r := server.GetRouter()

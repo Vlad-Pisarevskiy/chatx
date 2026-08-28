@@ -76,6 +76,19 @@
   #status[data-live] { color: #2e7d4f; }
   #status a { color: #0088b0; }
 
+  #logout {
+    padding: 6px 12px;
+    font: inherit;
+    font-size: 14px;
+    color: #201e1d;
+    background: #fff;
+    border: 1px solid #c9c7c7;
+    border-radius: 2px;
+    cursor: pointer;
+  }
+  #logout:hover { background: #f7f6f6; }
+  #logout:disabled { color: #6b6867; cursor: default; }
+
   #messages {
     flex: 1;
     margin: 0;
@@ -181,6 +194,7 @@
   <header>
     <h2 id="peer">Выберите собеседника</h2>
     <span id="status">соединение…</span>
+    <button type="button" id="logout">Выйти из аккаунта</button>
   </header>
 
   <ol id="messages" hidden></ol>
@@ -202,6 +216,7 @@ const formEl = document.getElementById("form");
 const textEl = document.getElementById("text");
 const peerEl = document.getElementById("peer");
 const statusEl = document.getElementById("status");
+const logoutEl = document.getElementById("logout");
 
 // id собеседника -> массив реплик. Переписка живёт только в памяти вкладки:
 // сервер историю не хранит, после F5 лента будет пустой.
@@ -212,6 +227,7 @@ let socket = null;
 let reconnectDelay = 1000;
 let everConnected = false;
 let failedAttempts = 0;
+let loggedOut = false;
 
 // --- выбор собеседника ---
 
@@ -295,6 +311,9 @@ function connect() {
   socket.addEventListener("error", () => socket.close());
 
   socket.addEventListener("close", () => {
+    // Вышли сами — переподключаться и пугать пользователя «нет связи» не надо.
+    if (loggedOut) return;
+
     failedAttempts += 1;
 
     // Ни одного успешного соединения — почти наверняка мидлвэйр не пустил: куки нет или истекла.
@@ -369,6 +388,31 @@ formEl.addEventListener("submit", (event) => {
 });
 
 connect();
+
+// --- выход из аккаунта ---
+
+logoutEl.addEventListener("click", async () => {
+  logoutEl.disabled = true;
+
+  // Кука httpOnly, из JS её не удалить — гасить сессию обязан сервер.
+  // Пока ручка не ответила OK, никуда не уходим: иначе покажем «вы вышли»,
+  // а токен останется живым.
+  try {
+    const response = await fetch("/auth/logout", { method: "POST" });
+    if (!response.ok) throw new Error("logout: " + response.status);
+  } catch (err) {
+    console.error(err);
+    logoutEl.disabled = false;
+    setStatus("не удалось выйти", false);
+    return;
+  }
+
+  loggedOut = true;
+  if (socket) socket.close();
+
+  // replace, а не href: назад по истории вкладки в чат уже не вернуться.
+  location.replace("/login");
+});
 
 // История сообщений
 async function loadMessages(userId) {
