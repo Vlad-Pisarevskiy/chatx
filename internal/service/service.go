@@ -16,28 +16,34 @@ type Service struct {
 	db *postgres.Repository
 }
 
+type RegisterInput struct {
+	Name     string
+	Login    string
+	Password string
+}
+
 func NewService(repo *postgres.Repository) *Service {
 	return &Service{db: repo}
 }
 
-func (s *Service) RegisterUser(ctx context.Context, name, login, password string) error {
+func (s *Service) RegisterUser(ctx context.Context, input RegisterInput) error {
 
-	var user = model.User{
-		Name:     name,
-		Login:    login,
-		Password: password,
-	}
-
-	if err := s.validateRegister(ctx, user); err != nil {
+	if err := s.validateRegister(ctx, input); err != nil {
 		return err
 	}
 
-	hash, err := hashPassword(user.Password)
+	hash, err := hashPassword(input.Password)
 	if err != nil {
 		return err
 	}
 
-	user.Password = hash
+	input.Password = hash
+
+	user := model.User{
+		Name:     input.Name,
+		Login:    input.Login,
+		Password: input.Password,
+	}
 
 	if err = s.db.RegisterUser(ctx, user); err != nil {
 		return err
@@ -129,7 +135,7 @@ func (s *Service) LoadMessages(ctx context.Context, from, to int) ([]model.Messa
 	return s.db.LoadMessages(ctx, from, to)
 }
 
-func (s *Service) validateRegister(ctx context.Context, user model.User) error {
+func (s *Service) validateRegister(ctx context.Context, user RegisterInput) error {
 
 	if err := correctLogin(user.Login); err != nil {
 		return err

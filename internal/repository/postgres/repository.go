@@ -109,6 +109,7 @@ func (r *Repository) GetUsersExcept(ctx context.Context, id int) ([]*model.UserF
 	return users, nil
 }
 
+// TODO: Проблема с токеном, он бессрочный, надо будет добавить когда он истекает и в целом реализовать механизм его продления и удаления
 func (r *Repository) AddToken(ctx context.Context, userID int, token []byte) error {
 
 	_, err := r.pool.Exec(ctx, "INSERT INTO tokens(user_id, token_hash) VALUES ($1, $2)", userID, token)
@@ -214,6 +215,7 @@ func (r *Repository) LoadMessages(ctx context.Context, from, to int) ([]model.Me
 
 	var messages []model.Message
 	var chatID int
+	//TODO: Запрос на получение чата пока работает но при групповых чатах поломается
 	if err := r.pool.QueryRow(ctx,
 		`SELECT chat_id                                                                                                                                                                      
   			 FROM users_chats                                                                                                                                                                    
@@ -281,3 +283,6 @@ func scanRows(rows pgx.Rows, users []*model.UserFromDB) ([]*model.UserFromDB, er
 
 	return users, nil
 }
+
+//TODO: будет функция удаления токена
+// func

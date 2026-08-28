@@ -100,14 +100,14 @@ func (c *Client) StartChat(addr string) {
 		}
 	}
 
-	conn, _, err := websocket.DefaultDialer.Dial(fmt.Sprintf("ws://%s/ws", addr), nil)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	defer conn.Close()
-
-	c.handle(conn)
+	//conn, _, err := websocket.DefaultDialer.Dial(fmt.Sprintf("ws://%s/ws", addr), nil)
+	//if err != nil {
+	//	log.Println(err)
+	//	return
+	//}
+	//defer conn.Close()
+	//
+	//c.handle(conn)
 }
 
 func (c *Client) handle(conn *websocket.Conn) {

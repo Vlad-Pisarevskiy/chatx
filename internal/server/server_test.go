@@ -24,7 +24,7 @@ func TestServer_Websocket(t *testing.T) {
 	assert.Nil(t, err)
 	defer pool.Close()
 
-	repository := postgres.NewRepository(context.Background(), pool)
+	repository := postgres.NewRepository(pool)
 	service := service2.NewService(repository)
 	server := NewServer(service)
 

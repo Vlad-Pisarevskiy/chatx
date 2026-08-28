@@ -31,11 +31,18 @@ import (
 type Server struct {
 	upgrader websocket.Upgrader
 	service  *service.Service
-	conns    map[int]chan protocol.SentMessage
+	conns    map[int]map[*Conn]struct{}
 	mu       sync.RWMutex
 }
 
-func NewServer(srv *service.Service) *Server {
+type Conn struct {
+	ws     *websocket.Conn
+	ch     chan protocol.SentMessage
+	userID int
+}
+
+// TODO: Сервер выополняет слишком много функций как будто, надо подумаать как развести
+func NewServer(service *service.Service) *Server {
 
 	return &Server{
 		upgrader: websocket.Upgrader{
@@ -45,8 +52,8 @@ func NewServer(srv *service.Service) *Server {
 				return true
 			},
 		},
-		conns:   make(map[int]chan protocol.SentMessage, msgBufferSize),
-		service: srv}
+		conns:   make(map[int]map[*Conn]struct{}, msgBufferSize),
+		service: service}
 }
 
 func (s *Server) GetRouter() *gin.Engine {
@@ -66,7 +73,6 @@ func (s *Server) GetRouter() *gin.Engine {
 
 	ws := r.Group("/ws")
 	ws.Use(s.authorization())
-	//ws.Use(s.login())
 	ws.GET("/", s.Run)
 
 	u := r.Group("/users")
@@ -120,6 +126,7 @@ func (s *Server) Chats(c *gin.Context) {
 	})
 }
 
+// TODO: Загрузка сообщений происходит по айди юзера, скорее всего надо будет на айди чата поменять
 func (s *Server) LoadMessages(c *gin.Context) {
 
 	userFrom, ok := c.Get(userIdKey)
@@ -160,11 +167,13 @@ func (s *Server) Register(c *gin.Context) {
 		return
 	}
 
-	if err := s.service.RegisterUser(c.Request.Context(),
-		registerRequest.Name,
-		registerRequest.Login,
-		registerRequest.Password,
-	); err != nil {
+	request := service.RegisterInput{
+		Name:     registerRequest.Name,
+		Login:    registerRequest.Login,
+		Password: registerRequest.Password,
+	}
+
+	if err := s.service.RegisterUser(c.Request.Context(), request); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": err.Error(),
 		})
@@ -186,7 +195,7 @@ func (s *Server) Login(c *gin.Context) {
 		return
 	}
 
-	user, token, err := s.service.LoginUser(c.Request.Context(),
+	user, token, err := s.service.LoginUser(c.Request.Context(), //TODO: Токен никак не обрабатывается
 		request.Login,
 		request.Password,
 	)
@@ -223,9 +232,12 @@ func (s *Server) Run(c *gin.Context) {
 		return
 	}
 
-	// Добавляем соединение в пул
 	id := userID.(int)
 
+	// TODO: Переделать и вернуть функцию
+	//И отдельно: &Conn{...} создан прямо в литерале, указатель нигде не сохранён. Даже дописав removeConn, тебе нечего будет ему передать — ключ анонимный. Указатель надо положить в
+	//  переменную и протащить до места удаления (и до reader/writer, которые сейчас получают conn, msgChan, done, userID четырьмя параметрами — вместо этого логичнее передавать один
+	//  *Conn, ради него он и заводился).
 	//defer s.removeConn(id, conn)
 
 	s.handle(id, conn)
@@ -236,7 +248,13 @@ func (s *Server) handle(userID int, conn *websocket.Conn) {
 	msgChan := make(chan protocol.SentMessage, msgBufferSize) // Канал для связи между горутинами
 
 	s.mu.Lock()
-	s.conns[userID] = msgChan
+	s.conns[userID] = map[*Conn]struct{}{ //TODO: идет затирание
+		&Conn{
+			ws:     conn,
+			ch:     msgChan,
+			userID: userID,
+		}: struct{}{},
+	}
 	s.mu.Unlock()
 
 	done := make(chan struct{})
@@ -260,6 +278,7 @@ func (s *Server) reader(conn *websocket.Conn, msgChan chan protocol.SentMessage,
 		_ = conn.Close()
 	}(conn)
 
+	// TODO: Какая то фигня с каналами, какие то наадо закрывать каакие то нет, надо разобраться
 	defer close(msgChan)
 	defer close(done)
 
@@ -304,9 +323,12 @@ func (s *Server) sendToUser(message protocol.SentMessage, userID int) {
 
 	s.mu.Lock()
 	if _, ok := s.conns[message.To]; ok {
-		s.conns[message.To] <- message
+		for k, _ := range s.conns[message.To] {
+			k.ch <- message
+		}
 	}
 	s.mu.Unlock()
+
 }
 
 func (s *Server) writer(conn *websocket.Conn, msgChan chan protocol.SentMessage, done chan struct{}) {
@@ -343,6 +365,7 @@ func sendMessage(conn *websocket.Conn, msg protocol.SentMessage, ok bool) {
 		return
 	}
 
+	//TODO: неправильный порядок надо сравниить с тиком и выровнять
 	if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
 		log.Println(err)
 		return
@@ -411,17 +434,7 @@ func (s *Server) pageAuthorization() gin.HandlerFunc {
 	}
 }
 
-//func login() gin.HandlerFunc {
-//
-//	return func(c *gin.Context) {
-//
-//		login := c.Query("login")
-//
-//		c.Set(userLoginKey, login)
-//		c.Next()
-//	}
-//}
-
+//TODO: Скорее всего придется реализовывать удаление конкретного соединения, функция будет нужна
 //func (s *Server) removeConn(userID string, conn *websocket.Conn) {
 //
 //	conns := make([]*websocket.Conn, 0, len(s.conns[userID]))
