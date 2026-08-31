@@ -249,7 +249,6 @@ func (s *Server) Run(c *gin.Context) {
 	id := userID.(int)
 
 	sess := newSession(id, conn, s.hub, s.service)
-
 	sess.handle()
 }
 
