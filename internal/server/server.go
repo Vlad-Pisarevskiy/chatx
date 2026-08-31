@@ -4,13 +4,10 @@ import (
 	"chatflow/internal/hub"
 	"chatflow/internal/protocol"
 	"chatflow/internal/service"
-	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -250,136 +247,10 @@ func (s *Server) Run(c *gin.Context) {
 	}
 
 	id := userID.(int)
-	s.handle(id, conn)
-}
 
-func (s *Server) handle(userID int, conn *websocket.Conn) {
+	sess := newSession(id, conn, s.hub, s.service)
 
-	msgChan := make(chan protocol.SentMessage, msgBufferSize)
-
-	userConn := s.hub.Add(userID, conn, msgChan)
-	defer s.hub.RemoveConn(userConn)
-
-	done := make(chan struct{})
-
-	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(readDeadline)) })
-	if err := conn.SetReadDeadline(time.Now().Add(readDeadline)); err != nil {
-		log.Println(err)
-		return
-	}
-
-	conn.SetReadLimit(readLimit)
-
-	go s.writer(conn, msgChan, done)
-
-	s.reader(conn, msgChan, done, userID)
-}
-
-func (s *Server) reader(conn *websocket.Conn, msgChan chan protocol.SentMessage, done chan struct{}, userID int) {
-
-	defer func(conn *websocket.Conn) {
-		_ = conn.Close()
-	}(conn)
-
-	// TODO: Какая то фигня с каналами, какие то наадо закрывать каакие то нет, надо разобраться
-	defer close(msgChan)
-	defer close(done)
-
-	for {
-		if err := s.readMessage(conn, userID, done); err != nil {
-			log.Println(err)
-			break
-		}
-	}
-}
-
-func (s *Server) readMessage(conn *websocket.Conn, userID int, done chan struct{}) error {
-
-	_, message, err := conn.ReadMessage()
-	if err != nil {
-		done <- struct{}{}
-		return err
-	}
-
-	var sentMessage protocol.SentMessage
-	if err = json.Unmarshal(message, &sentMessage); err != nil {
-		log.Println(err)
-		return nil
-	}
-
-	s.sendToUser(sentMessage, userID)
-
-	if err = conn.SetReadDeadline(time.Now().Add(readDeadline)); err != nil {
-		done <- struct{}{}
-		return err
-	}
-
-	return nil
-}
-
-func (s *Server) sendToUser(message protocol.SentMessage, userID int) {
-
-	if err := s.service.SendMessage(context.Background(), message, userID); err != nil {
-		log.Println(err)
-		return
-	}
-
-	s.hub.Send(message)
-
-}
-
-func (s *Server) writer(conn *websocket.Conn, msgChan chan protocol.SentMessage, done chan struct{}) {
-
-	ticker := time.NewTicker(tickerTiming)
-
-	defer ticker.Stop()
-	defer func(conn *websocket.Conn) {
-		_ = conn.Close()
-	}(conn)
-
-	for {
-		select {
-		case msg, ok := <-msgChan:
-			sendMessage(conn, msg, ok)
-
-		case <-ticker.C:
-			sendTick(conn)
-
-		case <-done:
-			return
-		}
-	}
-}
-
-func sendMessage(conn *websocket.Conn, msg protocol.SentMessage, ok bool) {
-
-	if !ok {
-		return
-	}
-
-	if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
-		log.Println(err)
-		return
-	}
-
-	if err := conn.WriteMessage(websocket.TextMessage, []byte(msg.Message)); err != nil {
-		log.Println(err)
-		return
-	}
-
-}
-
-func sendTick(conn *websocket.Conn) {
-
-	if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
-		log.Println(err)
-		return
-	}
-
-	if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-		log.Println(err)
-		return
-	}
+	sess.handle()
 }
 
 func (s *Server) authorization() gin.HandlerFunc {
