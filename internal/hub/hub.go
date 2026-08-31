@@ -30,14 +30,16 @@ type Conn struct {
 	ws     *websocket.Conn
 	ch     chan protocol.SentMessage
 	userID int
+	done   chan struct{}
 }
 
-func (h *Hub) Add(userID int, conn *websocket.Conn, msgChan chan protocol.SentMessage) *Conn {
+func (h *Hub) Add(userID int, conn *websocket.Conn, msgChan chan protocol.SentMessage, done chan struct{}) *Conn {
 
 	userConn := &Conn{
 		ws:     conn,
 		ch:     msgChan,
 		userID: userID,
+		done:   done,
 	}
 
 	h.mu.Lock()
@@ -55,16 +57,14 @@ func (h *Hub) Add(userID int, conn *websocket.Conn, msgChan chan protocol.SentMe
 func (h *Hub) Send(message protocol.SentMessage) {
 
 	h.mu.RLock()
-	chans := make([]chan protocol.SentMessage, nullLength, len(h.conns[message.To]))
-
-	for k := range h.conns[message.To] {
-		chans = append(chans, k.ch)
-	}
-
+	conns := slices.Collect(maps.Keys(h.conns[message.To]))
 	h.mu.RUnlock()
 
-	for _, v := range chans {
-		v <- message
+	for _, c := range conns {
+		select {
+		case c.ch <- message:
+		case <-c.done:
+		}
 	}
 }
 
