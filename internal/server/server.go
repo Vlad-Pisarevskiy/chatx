@@ -212,7 +212,7 @@ func (s *Server) Login(c *gin.Context) {
 		return
 	}
 
-	user, token, err := s.service.LoginUser(c.Request.Context(), //TODO: Токен никак не обрабатывается
+	user, token, err := s.service.LoginUser(c.Request.Context(),
 		request.Login,
 		request.Password,
 	)
