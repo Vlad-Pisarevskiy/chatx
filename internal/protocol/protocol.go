@@ -6,14 +6,14 @@ import (
 )
 
 type Data struct {
-	MessageType string `json:"type"`
-	Payload     json.RawMessage
+	MessageType string          `json:"type"`
+	Payload     json.RawMessage `json:"payload"`
 }
 
 type Send struct {
 	ChatID      int    `json:"chat_id"`
 	Body        string `json:"body"`
-	ClientMsgID int    `json:"client_msg_id"`
+	ClientMsgID string `json:"client_msg_id"`
 }
 
 type Message struct {

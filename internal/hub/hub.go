@@ -57,7 +57,7 @@ func (h *Hub) Add(userID int, conn *websocket.Conn, msgChan chan protocol.Send, 
 func (h *Hub) Send(message protocol.Send) {
 
 	h.mu.RLock()
-	conns := slices.Collect(maps.Keys(h.conns[message.To]))
+	conns := slices.Collect(maps.Keys(h.conns[message.ChatID]))
 	h.mu.RUnlock()
 
 	for _, c := range conns {
@@ -98,6 +98,6 @@ func (h *Hub) Close() {
 		if err := c.ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutdown"), deadline); err != nil {
 			log.Println(err)
 		}
-		c.ws.Close()
+		_ = c.ws.Close()
 	}
 }

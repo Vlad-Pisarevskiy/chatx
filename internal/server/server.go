@@ -73,9 +73,14 @@ func (s *Server) GetRouter() *gin.Engine {
 
 	u := r.Group("/users")
 	u.Use(s.pageAuthorization())
+	u.GET("/", s.Chats)
+
+	chats := r.Group("/chats")
+	chats.Use(s.pageAuthorization())
 	{
-		u.GET("/", s.Chats)
-		u.GET("/:userID/messages", s.LoadMessages)
+		chats.GET("/direct?peer_id=")
+		chats.GET("/:chatID/messages")
+		chats.POST("/direct")
 	}
 
 	return r

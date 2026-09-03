@@ -107,6 +107,7 @@
   }
   .msg.mine { margin-left: auto; color: #fff; background: #0088b0; }
   .msg.theirs { background: #fff; border: 1px solid #e4e2e2; }
+  .msg.sending { opacity: .55; }
   .msg.system {
     max-width: none;
     margin: 8px 0;
@@ -218,11 +219,23 @@ const peerEl = document.getElementById("peer");
 const statusEl = document.getElementById("status");
 const logoutEl = document.getElementById("logout");
 
-// id собеседника -> массив реплик. Переписка живёт только в памяти вкладки:
-// сервер историю не хранит, после F5 лента будет пустой.
+// peerId (строка) -> массив реплик. Лента живёт в памяти вкладки; историю
+// подтягиваем с сервера при открытии переписки.
 const history = new Map();
 
-let currentTo = null;
+// Слева список пользователей, а адресуется всё по чатам — держим связку в обе стороны.
+const chatIdByPeer = new Map();   // peerId (строка) -> chatId (число)
+const peerIdByChat = new Map();   // chatId (число)  -> peerId (строка)
+
+// client_msg_id -> ещё не подтверждённое сообщение, ждёт ack.
+const pending = new Map();
+
+// Серверные id всего, что уже нарисовано: по ним отбрасываются дубли между
+// историей, эхом собственного сообщения и ack.
+const seenMessageIds = new Set();
+
+let currentPeerId = null;
+let currentChatId = null;
 let socket = null;
 let reconnectDelay = 1000;
 let everConnected = false;
@@ -236,12 +249,13 @@ usersEl.addEventListener("click", (event) => {
   if (button) selectUser(button.dataset.id, button.dataset.name);
 });
 
-async function selectUser(id, name) {
-  currentTo = id;
+async function selectUser(peerId, name) {
+  currentPeerId = peerId;
+  currentChatId = null;
   peerEl.textContent = name;
 
   for (const button of usersEl.querySelectorAll(".user")) {
-    const active = button.dataset.id === id;
+    const active = button.dataset.id === peerId;
     button.classList.toggle("active", active);
 
     if (active) {
@@ -254,18 +268,84 @@ async function selectUser(id, name) {
   formEl.hidden = false;
 
   messagesEl.replaceChildren();
-
-  await loadMessages(id);
-
   textEl.focus();
+
+  // Клик — операция только на чтение. Спрашиваем, есть ли уже чат с этим
+  // человеком, и ничего не создаём: иначе база забивалась бы пустыми чатами
+  // от одного лишь просмотра списка.
+  let chatId = null;
+  try {
+    chatId = await resolveChat(peerId);
+  } catch (err) {
+    console.error(err);
+    note("Не удалось открыть переписку");
+    return;
+  }
+
+  // Пока шёл запрос, могли кликнуть по другому человеку — ответ уже не наш.
+  if (currentPeerId !== peerId) return;
+
+  currentChatId = chatId;
+
+  // chatId === null значит, что переписки ещё не было. Это не ошибка: лента
+  // пустая, чат появится в базе при отправке первого сообщения.
+  if (chatId === null) {
+    renderHistory(peerId);
+    return;
+  }
+
+  await loadMessages(chatId, peerId);
+}
+
+// --- чаты ---
+
+// Поиск чата, без создания. 404 — переписки не было, это штатный ответ.
+async function resolveChat(peerId) {
+  const known = chatIdByPeer.get(peerId);
+  if (known !== undefined) return known;
+
+  const response = await fetch("/chats/direct?peer_id=" + encodeURIComponent(peerId));
+
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error("resolveChat: " + response.status);
+
+  const payload = await response.json();
+  bindChat(payload.chat_id, peerId);
+  return payload.chat_id;
+}
+
+// get-or-create. Если чат успели создать параллельно (собеседник написал
+// первым в ту же секунду), ручка обязана вернуть существующий id, а не завести
+// второй чат на ту же пару — иначе переписка расползётся по двум лентам.
+async function createChat(peerId) {
+  const response = await fetch("/chats/direct", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ peer_id: Number(peerId) }),
+  });
+
+  if (!response.ok) throw new Error("createChat: " + response.status);
+
+  const payload = await response.json();
+  bindChat(payload.chat_id, peerId);
+  return payload.chat_id;
+}
+
+function bindChat(chatId, peerId) {
+  chatIdByPeer.set(peerId, chatId);
+  peerIdByChat.set(chatId, peerId);
 }
 
 // --- лента ---
 
 function bubble(message) {
   const li = document.createElement("li");
-  li.className = "msg " + message.kind;
+  li.className = "msg " + message.kind + (message.state === "sending" ? " sending" : "");
   li.textContent = message.text; // textContent, а не innerHTML: текст приходит от другого пользователя
+
+  // По этому атрибуту ack находит нарисованный пузырь и снимает с него «отправляется».
+  if (message.clientMsgId) li.dataset.cmid = message.clientMsgId;
+
   return li;
 }
 
@@ -273,11 +353,19 @@ function scrollDown() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
+function renderHistory(peerId) {
+  messagesEl.replaceChildren();
+  for (const message of history.get(peerId) || []) {
+    messagesEl.append(bubble(message));
+  }
+  scrollDown();
+}
+
 function push(peerId, message) {
   if (!history.has(peerId)) history.set(peerId, []);
   history.get(peerId).push(message);
 
-  if (peerId === currentTo) {
+  if (peerId === currentPeerId) {
     messagesEl.append(bubble(message));
     scrollDown();
     return;
@@ -288,7 +376,7 @@ function push(peerId, message) {
 }
 
 function note(text) {
-  if (currentTo) push(currentTo, { kind: "system", text: text });
+  if (currentPeerId) push(currentPeerId, { kind: "system", text: text });
 }
 
 // --- сокет ---
@@ -339,18 +427,51 @@ function setStatus(text, live) {
   else statusEl.removeAttribute("data-live");
 }
 
+// Оба направления ходят одним конвертом {type, payload}.
 function receive(raw) {
-  const parsed = tryParse(raw);
+  const frame = tryParse(raw);
+  if (!frame || typeof frame.type !== "string") return;
 
-  // Сейчас writer шлёт голый текст, отправитель теряется. Если он начнёт слать protocol.SendMessage
-  // целиком — раскладываем по чатам, и пустой from читаем как служебное сообщение сервера.
-  if (parsed && typeof parsed.message === "string") {
-    if (parsed.from) push(String(parsed.from), { kind: "theirs", text: parsed.message });
-    else note(parsed.message);
-    return;
+  const payload = frame.payload || {};
+
+  if (frame.type === "message") onMessage(payload);
+  else if (frame.type === "ack") onAck(payload);
+  else if (frame.type === "error") note(payload.description || "ошибка сервера");
+}
+
+function onMessage(payload) {
+  // Своё сообщение приходит дважды: как ack на этом соединении и как message
+  // (сервер рассылает всем участникам чата, отправитель — тоже участник).
+  // Дедуплицируем по серверному id, он единственный общий для обеих копий.
+  if (seenMessageIds.has(payload.message_id)) return;
+  seenMessageIds.add(payload.message_id);
+
+  let peerId = peerIdByChat.get(payload.chat_id);
+
+  // Чат нам незнаком — значит, собеседник написал первым, а мы на него не кликали.
+  // В личном чате отправитель и есть собеседник, так что связку узнаём отсюда.
+  if (peerId === undefined) {
+    if (Number(payload.sender_id) === Number(myUserId)) return;
+    peerId = String(payload.sender_id);
+    bindChat(payload.chat_id, peerId);
   }
 
-  if (currentTo) push(currentTo, { kind: "theirs", text: raw });
+  const kind = Number(payload.sender_id) === Number(myUserId) ? "mine" : "theirs";
+  push(peerId, { kind: kind, text: payload.body });
+}
+
+function onAck(payload) {
+  // Серверный id запоминаем до того, как придёт эхо этого же сообщения.
+  seenMessageIds.add(payload.message_id);
+
+  const message = pending.get(payload.client_msg_id);
+  if (!message) return;
+  pending.delete(payload.client_msg_id);
+
+  message.state = "sent";
+
+  const el = messagesEl.querySelector('[data-cmid="' + CSS.escape(payload.client_msg_id) + '"]');
+  if (el) el.classList.remove("sending");
 }
 
 function tryParse(raw) {
@@ -364,27 +485,50 @@ function tryParse(raw) {
 
 // --- отправка ---
 
-formEl.addEventListener("submit", (event) => {
+formEl.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const text = textEl.value.trim();
-  if (!text || !currentTo) return;
+  if (!text || !currentPeerId) return;
 
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     note("Нет связи с сервером, сообщение не отправлено");
     return;
   }
 
-  // from не шлём: отправителя сервер знает сам из токена, клиенту тут верить нельзя.
-  // to приводим к числу: currentTo всюду хранится строкой (dataset отдаёт только строки),
-  // а в protocol.SendMessage поле To — int, и json.Unmarshal строку в int не приводит.
-  socket.send(JSON.stringify({ to: Number(currentTo), message: text }));
-
-  // Своё сообщение сервер обратно не присылает — рисуем сами.
-  push(currentTo, { kind: "mine", text: text });
+  // Запоминаем, кому пишем: пока создаётся чат, пользователь может уйти в другую переписку.
+  const peerId = currentPeerId;
 
   textEl.value = "";
   textEl.focus();
+
+  // Вот здесь и только здесь чат заводится в базе — на первом реальном
+  // сообщении. Дальше id уже известен и вторая отправка идёт сразу в сокет.
+  let chatId = chatIdByPeer.get(peerId);
+  if (chatId === undefined) {
+    try {
+      chatId = await createChat(peerId);
+    } catch (err) {
+      console.error(err);
+      note("Не удалось начать чат, сообщение не отправлено");
+      return;
+    }
+    if (currentPeerId === peerId) currentChatId = chatId;
+  }
+
+  // Уникален между перезагрузками вкладки: счётчик после F5 начался бы заново,
+  // сервер счёл бы новое сообщение ретраем старого и молча его потерял.
+  const clientMsgId = crypto.randomUUID();
+
+  const message = { kind: "mine", text: text, state: "sending", clientMsgId: clientMsgId };
+  pending.set(clientMsgId, message);
+  push(peerId, message);
+
+  // from не шлём: отправителя сервер знает сам из токена, клиенту тут верить нельзя.
+  socket.send(JSON.stringify({
+    type: "send",
+    payload: { chat_id: chatId, body: text, client_msg_id: clientMsgId },
+  }));
 });
 
 connect();
@@ -415,9 +559,9 @@ logoutEl.addEventListener("click", async () => {
 });
 
 // История сообщений
-async function loadMessages(userId) {
+async function loadMessages(chatId, peerId) {
   try {
-    const response = await fetch(`/users/${userId}/messages`);
+    const response = await fetch("/chats/" + chatId + "/messages");
 
     if (!response.ok) {
       throw new Error("Не удалось загрузить сообщения");
@@ -425,28 +569,20 @@ async function loadMessages(userId) {
 
     const messages = await response.json();
 
-    console.log("messages from server:", messages);
+    history.set(peerId, messages.map((message) => {
+      // Тот же id, что и в live-потоке: сообщение, пришедшее между запросом
+      // истории и её отрисовкой, придёт дважды и будет отброшено по нему.
+      seenMessageIds.add(message.message_id);
 
-    history.set(userId, []);
+      return {
+        kind: Number(message.sender_id) === Number(myUserId) ? "mine" : "theirs",
+        text: message.body,
+      };
+    }));
 
-    for (const message of messages) {
-      const kind = Number(message.from) === Number(myUserId)
-              ? "mine"
-              : "theirs";
+    if (currentPeerId !== peerId) return;
 
-      history.get(userId).push({
-        kind: kind,
-        text: message.data
-      });
-    }
-
-    messagesEl.replaceChildren();
-
-    for (const message of history.get(userId)) {
-      messagesEl.append(bubble(message));
-    }
-
-    scrollDown();
+    renderHistory(peerId);
 
   } catch (err) {
     console.error(err);
