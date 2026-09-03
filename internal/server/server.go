@@ -22,7 +22,7 @@ import (
 //	GetUsersExcept(ctx context.Context, id int) ([]*model.UserFromDB, error)
 //	ChatExists(ctx context.Context, from, to int) (bool, error)
 //	StartChat(ctx context.Context, from, to int) (int, error)
-//	SentMessage(ctx context.Context, chatID, from int, message string) error
+//	Send(ctx context.Context, chatID, from int, message string) error
 //}
 
 type Server struct {
@@ -33,7 +33,7 @@ type Server struct {
 
 type Conn struct {
 	ws     *websocket.Conn
-	ch     chan protocol.SentMessage
+	ch     chan protocol.Send
 	userID int
 }
 

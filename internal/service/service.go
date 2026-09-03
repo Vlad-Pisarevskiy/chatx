@@ -125,7 +125,7 @@ func (s *Service) GetUsersExcept(ctx context.Context, id int) ([]*model.UserFrom
 	return s.db.GetUsersExcept(ctx, id)
 }
 
-func (s *Service) SendMessage(ctx context.Context, message protocol.SentMessage, from int) error {
+func (s *Service) SendMessage(ctx context.Context, message protocol.Send, from int) error {
 
 	chatID, ok, err := s.db.ChatExists(ctx, from, message.To)
 	if err != nil {

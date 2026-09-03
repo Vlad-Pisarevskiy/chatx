@@ -28,12 +28,12 @@ func New() *Hub {
 
 type Conn struct {
 	ws     *websocket.Conn
-	ch     chan protocol.SentMessage
+	ch     chan protocol.Send
 	userID int
 	done   chan struct{}
 }
 
-func (h *Hub) Add(userID int, conn *websocket.Conn, msgChan chan protocol.SentMessage, done chan struct{}) *Conn {
+func (h *Hub) Add(userID int, conn *websocket.Conn, msgChan chan protocol.Send, done chan struct{}) *Conn {
 
 	userConn := &Conn{
 		ws:     conn,
@@ -54,7 +54,7 @@ func (h *Hub) Add(userID int, conn *websocket.Conn, msgChan chan protocol.SentMe
 	return userConn
 }
 
-func (h *Hub) Send(message protocol.SentMessage) {
+func (h *Hub) Send(message protocol.Send) {
 
 	h.mu.RLock()
 	conns := slices.Collect(maps.Keys(h.conns[message.To]))

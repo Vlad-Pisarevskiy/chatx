@@ -15,4 +15,5 @@ const (
 
 	userIdKey = "userID"
 	tokenKey  = "token"
+	sendType  = "send"
 )

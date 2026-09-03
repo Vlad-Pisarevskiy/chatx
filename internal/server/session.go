@@ -15,7 +15,7 @@ import (
 type session struct {
 	userID  int
 	conn    *websocket.Conn
-	msgChan chan protocol.SentMessage
+	msgChan chan protocol.Send
 	done    chan struct{}
 	hub     *hub.Hub
 	service *service.Service
@@ -26,7 +26,7 @@ func newSession(userID int, conn *websocket.Conn, hub2 *hub.Hub, service2 *servi
 	return &session{
 		userID:  userID,
 		conn:    conn,
-		msgChan: make(chan protocol.SentMessage, msgBufferSize),
+		msgChan: make(chan protocol.Send, msgBufferSize),
 		done:    make(chan struct{}),
 		hub:     hub2,
 		service: service2,
@@ -35,7 +35,8 @@ func newSession(userID int, conn *websocket.Conn, hub2 *hub.Hub, service2 *servi
 
 func (s *session) handle() {
 
-	userConn := s.hub.Add(s.userID, s.conn, s.msgChan, s.done) // добавляем пользователя в хаб соединений
+	userConn := s.hub.Add(s.userID, s.conn, s.msgChan, s.done)
+
 	defer s.hub.RemoveConn(userConn)
 	defer func(conn *websocket.Conn) {
 		_ = conn.Close()
@@ -60,12 +61,12 @@ func (s *session) reader() {
 		_ = conn.Close()
 	}(s.conn)
 
-	defer close(s.done) // также закрываем канал сигнализирующий о завершении работы программы
+	defer close(s.done)
 
 	for {
 		if err := s.readMessage(); err != nil {
 			log.Println(err)
-			break // не получилось прочитать сообщение - выходим, после закрываются каналы
+			break
 		}
 	}
 }
@@ -77,13 +78,20 @@ func (s *session) readMessage() error {
 		return err
 	}
 
-	var sentMessage protocol.SentMessage
-	if err = json.Unmarshal(message, &sentMessage); err != nil {
+	var sendMessage protocol.Send
+	var data protocol.Data
+	if err = json.Unmarshal(message, &data); err != nil {
 		log.Println(err)
-		return nil // если не получилось распарсить, то смысл из-за этого сбрасывать соединение
+		return nil
 	}
 
-	s.sendToUser(sentMessage)
+	if data.MessageType == sendType {
+		if err = json.Unmarshal(data.Payload, &sendMessage); err != nil {
+			log.Println(err)
+			return nil
+		}
+		s.sendToUser(sendMessage)
+	}
 
 	if err = s.conn.SetReadDeadline(time.Now().Add(readDeadline)); err != nil {
 		return err
@@ -92,18 +100,16 @@ func (s *session) readMessage() error {
 	return nil
 }
 
-func (s *session) sendToUser(message protocol.SentMessage) {
+func (s *session) sendToUser(message protocol.Send) {
 
 	if err := s.service.SendMessage(context.Background(), message, s.userID); err != nil {
 		log.Println(err)
 		return
 	}
-	// странно, если не получилось отправить сообщение то ничего не возвращаем
-	// хотя это же просто запись в бд, если не записалось то смысл из за этого соединение обрываать
+
 	s.hub.Send(message)
 }
 
-// Пишет присланные сообщения
 func (s *session) writer() {
 
 	ticker := time.NewTicker(tickerTiming)
@@ -124,14 +130,14 @@ func (s *session) writer() {
 	}
 }
 
-func (s *session) sendMessage(msg protocol.SentMessage) {
+func (s *session) sendMessage(msg protocol.Send) {
 
 	if err := s.conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
 		log.Println(err)
 		return
 	}
 
-	if err := s.conn.WriteMessage(websocket.TextMessage, []byte(msg.Message)); err != nil {
+	if err := s.conn.WriteMessage(websocket.TextMessage, []byte(msg.Body)); err != nil {
 		log.Println(err)
 		return
 	}
