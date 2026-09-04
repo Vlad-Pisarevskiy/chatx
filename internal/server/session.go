@@ -1,6 +1,7 @@
 package server
 
 import (
+	errors1 "chatflow/internal/app-errors"
 	"chatflow/internal/hub"
 	"chatflow/internal/protocol"
 	"chatflow/internal/service"
@@ -16,28 +17,33 @@ type session struct {
 	userID  int
 	conn    *websocket.Conn
 	msgChan chan protocol.Send
-	done    chan struct{}
 	hub     *hub.Hub
 	service *service.Service
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
 func newSession(userID int, conn *websocket.Conn, hub2 *hub.Hub, service2 *service.Service) *session {
 
-	return &session{
+	var sess = &session{
 		userID:  userID,
 		conn:    conn,
 		msgChan: make(chan protocol.Send, msgBufferSize),
-		done:    make(chan struct{}),
 		hub:     hub2,
 		service: service2,
 	}
+
+	sess.ctx, sess.cancel = context.WithCancel(context.Background())
+
+	return sess
 }
 
 func (s *session) handle() {
 
-	userConn := s.hub.Add(s.userID, s.conn, s.msgChan, s.done)
+	userConn := s.hub.Add(s.userID, s.conn, s.msgChan, s.ctx.Done())
 
 	defer s.hub.RemoveConn(userConn)
+	defer s.cancel()
 	defer func(conn *websocket.Conn) {
 		_ = conn.Close()
 	}(s.conn)
@@ -60,8 +66,6 @@ func (s *session) reader() {
 	defer func(conn *websocket.Conn) {
 		_ = conn.Close()
 	}(s.conn)
-
-	defer close(s.done)
 
 	for {
 		if err := s.readMessage(); err != nil {
@@ -92,15 +96,15 @@ func (s *session) readMessage() error {
 		}
 
 		if sendMessage.ChatID == nullID && sendMessage.PeerID == nullID {
-			return err
+			return errors1.ErrIncorrectData
 		}
 
 		if sendMessage.ChatID != nullID && sendMessage.PeerID != nullID {
-
+			return errors1.ErrIncorrectData
 		}
 
 		if sendMessage.PeerID != nullID {
-			chatID, err := s.service.GetOrCreateChat(context.Background(), sendMessage.PeerID, s.userID)
+			chatID, err := s.service.GetOrCreateChat(s.ctx, sendMessage.PeerID, s.userID)
 			if err != nil {
 				return err
 			}
@@ -143,7 +147,7 @@ func (s *session) writer() {
 		case <-ticker.C:
 			s.sendTick()
 
-		case <-s.done: // когда приходит структура возвращаемся
+		case <-s.ctx.Done():
 			return
 		}
 	}
@@ -160,7 +164,6 @@ func (s *session) sendMessage(msg protocol.Send) {
 		log.Println(err)
 		return
 	}
-
 }
 
 func (s *session) sendTick() {
