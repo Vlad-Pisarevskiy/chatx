@@ -125,6 +125,25 @@ func (s *Service) GetUsersExcept(ctx context.Context, id int) ([]*model.UserFrom
 	return s.db.GetUsersExcept(ctx, id)
 }
 
+func (s *Service) GetOrCreateChat(ctx context.Context, peerID, sender int) (int, error) {
+
+	chatID, ok, err := s.db.ChatExists(ctx, sender, peerID)
+	if err != nil {
+		return emptyID, err
+	}
+
+	if ok {
+		return chatID, nil
+	}
+
+	chatID, err = s.db.StartChat(ctx, sender, peerID)
+	if err != nil {
+		return emptyID, err
+	}
+
+	return chatID, nil
+}
+
 func (s *Service) SendMessage(ctx context.Context, message protocol.Send, from int) error {
 
 	chatID, ok, err := s.db.ChatExists(ctx, from, message.To)
@@ -149,80 +168,4 @@ func (s *Service) SendMessage(ctx context.Context, message protocol.Send, from i
 func (s *Service) LoadMessages(ctx context.Context, from, to int) ([]model.Message, error) {
 
 	return s.db.LoadMessages(ctx, from, to)
-}
-
-func (s *Service) validateRegister(ctx context.Context, user RegisterInput) error {
-
-	if err := correctLogin(user.Login); err != nil {
-		return err
-	}
-
-	if err := s.db.LoginExists(ctx, user.Login); err != nil {
-		return err
-	}
-
-	if err := correctName(user.Name); err != nil {
-		return err
-	}
-
-	if err := correctPassword(user.Password); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func hashPassword(password string) (string, error) {
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return emptyHash, err
-	}
-	return string(hashedPassword), nil
-}
-
-func correctName(name string) error {
-
-	if name == emptyName {
-		return errors1.ErrEmptyName
-	}
-
-	if len(name) > maxNameLength {
-		return errors1.ErrLongName
-	}
-
-	return nil
-}
-
-func correctLogin(login string) error {
-
-	if login == emptyLogin {
-		return errors1.ErrEmptyLogin
-	}
-
-	if len(login) < minLoginLength {
-		return errors1.ErrShortLogin
-	}
-
-	if len(login) > maxLoginLength {
-		return errors1.ErrLongLogin
-	}
-
-	return nil
-}
-
-func correctPassword(password string) error {
-
-	if password == emptyPassword {
-		return errors1.ErrEmptyPassword
-	}
-
-	if len(password) < minPasswordLength {
-		return errors1.ErrShortPassword
-	}
-
-	if len(password) > maxPasswordLength {
-		return errors1.ErrLongPassword
-	}
-
-	return nil
 }
