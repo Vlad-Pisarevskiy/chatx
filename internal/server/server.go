@@ -78,12 +78,43 @@ func (s *Server) GetRouter() *gin.Engine {
 	chats := r.Group("/chats")
 	chats.Use(s.pageAuthorization())
 	{
-		chats.GET("/direct?peer_id=")
-		chats.GET("/:chatID/messages")
-		chats.POST("/direct")
+		chats.GET("/direct", s.GetPeer)
+		chats.GET("/:chatID/messages", s.LoadMessages)
 	}
 
 	return r
+}
+
+func (s *Server) GetPeer(c *gin.Context) {
+
+	peer := c.Query(peerID)
+	if peer == emptyPeer {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.Atoi(c.Query(peerID))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+	}
+
+	chatID, err := s.service.ChatExist(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": err.Error(),
+		})
+	}
+
+	if chatID == nullID {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"chat_id": chatID,
+	})
 }
 
 func (s *Server) Registration(c *gin.Context) {

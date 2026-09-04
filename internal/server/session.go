@@ -90,7 +90,26 @@ func (s *session) readMessage() error {
 			log.Println(err)
 			return nil
 		}
-		s.sendToUser(sendMessage)
+
+		if sendMessage.ChatID == nullID && sendMessage.PeerID == nullID {
+			return err
+		}
+
+		if sendMessage.ChatID != nullID && sendMessage.PeerID != nullID {
+
+		}
+
+		if sendMessage.PeerID != nullID {
+			chatID, err := s.service.GetOrCreateChat(context.Background(), sendMessage.PeerID, s.userID)
+			if err != nil {
+				return err
+			}
+			sendMessage.ChatID = chatID
+		}
+
+		if sendMessage.ChatID != nullID {
+			s.sendToChat(sendMessage)
+		}
 	}
 
 	if err = s.conn.SetReadDeadline(time.Now().Add(readDeadline)); err != nil {
@@ -100,7 +119,7 @@ func (s *session) readMessage() error {
 	return nil
 }
 
-func (s *session) sendToUser(message protocol.Send) {
+func (s *session) sendToChat(message protocol.Send) {
 
 	if err := s.service.SendMessage(context.Background(), message, s.userID); err != nil {
 		log.Println(err)

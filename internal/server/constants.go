@@ -16,4 +16,7 @@ const (
 	userIdKey = "userID"
 	tokenKey  = "token"
 	sendType  = "send"
+	peerID    = "peer_id"
+	emptyPeer = ""
+	nullID    = 0
 )
