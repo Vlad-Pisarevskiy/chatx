@@ -30,10 +30,10 @@ type Conn struct {
 	ws     *websocket.Conn
 	ch     chan protocol.Send
 	userID int
-	done   chan struct{}
+	done   <-chan struct{}
 }
 
-func (h *Hub) Add(userID int, conn *websocket.Conn, msgChan chan protocol.Send, done chan struct{}) *Conn {
+func (h *Hub) Add(userID int, conn *websocket.Conn, msgChan chan protocol.Send, done <-chan struct{}) *Conn {
 
 	userConn := &Conn{
 		ws:     conn,
