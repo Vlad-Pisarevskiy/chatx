@@ -18,6 +18,7 @@ const (
 	tokenKey    = "token"
 	sendType    = "send"
 	peerID      = "peer_id"
+	ackType     = "ack"
 	emptyPeer   = ""
 	nullID      = 0
 )
