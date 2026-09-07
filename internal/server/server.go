@@ -100,7 +100,7 @@ func (s *Server) GetPeer(c *gin.Context) {
 		})
 	}
 
-	chatID, err := s.service.ChatExist(c.Request.Context(), id)
+	chatID, err := s.service.FindChat(c.Request.Context(), id)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": err.Error(),

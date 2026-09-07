@@ -16,7 +16,7 @@ import (
 type session struct {
 	userID  int
 	conn    *websocket.Conn
-	msgChan chan protocol.Send
+	msgChan chan protocol.Data
 	hub     *hub.Hub
 	service *service.Service
 	ctx     context.Context
@@ -28,7 +28,7 @@ func newSession(userID int, conn *websocket.Conn, hub2 *hub.Hub, service2 *servi
 	var sess = &session{
 		userID:  userID,
 		conn:    conn,
-		msgChan: make(chan protocol.Send, msgBufferSize),
+		msgChan: make(chan protocol.Data, msgBufferSize),
 		hub:     hub2,
 		service: service2,
 	}
@@ -89,7 +89,7 @@ func (s *session) readMessage() error {
 		return nil
 	}
 
-	if data.MessageType == sendType {
+	if data.Type == sendType {
 		if err = json.Unmarshal(data.Payload, &sendMessage); err != nil {
 			log.Println(err)
 			return nil
@@ -103,15 +103,15 @@ func (s *session) readMessage() error {
 			return errors1.ErrIncorrectData
 		}
 
-		if sendMessage.PeerID != nullID {
+		if sendMessage.ChatID != nullID {
+			s.sendToChat(sendMessage)
+
+		} else if sendMessage.PeerID != nullID {
 			chatID, err := s.service.GetOrCreateChat(s.ctx, sendMessage.PeerID, s.userID)
 			if err != nil {
 				return err
 			}
 			sendMessage.ChatID = chatID
-		}
-
-		if sendMessage.ChatID != nullID {
 			s.sendToChat(sendMessage)
 		}
 	}
@@ -123,16 +123,30 @@ func (s *session) readMessage() error {
 	return nil
 }
 
-func (s *session) sendToChat(message protocol.Send) {
+func (s *session) sendToChat(send protocol.Send) {
 
-	if err := s.service.SendMessage(context.Background(), message, s.userID); err != nil {
+	message, userID, err := s.service.SendMessage(context.Background(), send, s.userID)
+	if err != nil {
 		log.Println(err)
 		return
 	}
 
-	s.hub.Send(message)
+	msg, err := json.Marshal(message)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	data := protocol.Data{
+		Type:    messageType,
+		Payload: msg,
+	}
+
+	s.hub.Send(userID, &data)
 }
 
+// TODO: так, мне надо клиенту отправлять подтверждение что его сообщение пришло, как это сделать? С бд
+// с бд надо возвращать структуру которая мне нужнаа для отправки и отпраавлять, парсинг происхходит на уровне фроонтаа
 func (s *session) writer() {
 
 	ticker := time.NewTicker(tickerTiming)
@@ -142,6 +156,7 @@ func (s *session) writer() {
 	for {
 		select {
 		case msg := <-s.msgChan:
+
 			s.sendMessage(msg)
 
 		case <-ticker.C:
@@ -153,14 +168,20 @@ func (s *session) writer() {
 	}
 }
 
-func (s *session) sendMessage(msg protocol.Send) {
+func (s *session) sendMessage(msg protocol.Data) {
 
 	if err := s.conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
 		log.Println(err)
 		return
 	}
 
-	if err := s.conn.WriteMessage(websocket.TextMessage, []byte(msg.Body)); err != nil {
+	message, err := json.Marshal(msg)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	if err := s.conn.WriteMessage(websocket.TextMessage, message); err != nil {
 		log.Println(err)
 		return
 	}

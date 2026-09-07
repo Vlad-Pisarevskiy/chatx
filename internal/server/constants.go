@@ -13,10 +13,11 @@ const (
 	writeDeadline = time.Second * 30
 	tickerTiming  = time.Second * 25
 
-	userIdKey = "userID"
-	tokenKey  = "token"
-	sendType  = "send"
-	peerID    = "peer_id"
-	emptyPeer = ""
-	nullID    = 0
+	messageType = "message"
+	userIdKey   = "userID"
+	tokenKey    = "token"
+	sendType    = "send"
+	peerID      = "peer_id"
+	emptyPeer   = ""
+	nullID      = 0
 )
