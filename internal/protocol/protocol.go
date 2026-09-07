@@ -6,25 +6,29 @@ import (
 )
 
 type Data struct {
-	MessageType string          `json:"type"`
-	Payload     json.RawMessage `json:"payload"`
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload"`
 }
 
 type Send struct {
-	ChatID      int    `json:"chat_id"`
+	PeerID      int    `json:"peer_id,omitempty"`
+	ChatID      int    `json:"chat_id,omitempty"`
 	Body        string `json:"body"`
 	ClientMsgID string `json:"client_msg_id"`
 }
 
 type Message struct {
-	MessageID int       `json:"message_id"`
-	Sender    string    `json:"sender"`
-	Time      time.Time `json:"time"`
+	Id       int       `json:"id"`
+	ChatID   int       `json:"chat_id"`
+	SenderID int       `json:"sender_id"`
+	Body     string    `json:"body"`
+	Time     time.Time `json:"time"`
 }
 
 type Ack struct {
-	ClientMsgID int `json:"client_msg_id"`
-	MessageID   int `json:"message_id"`
+	ClientMsgID string    `json:"client_msg_id"`
+	MessageID   int       `json:"message_id"`
+	Time        time.Time `json:"time"`
 }
 
 type Error struct {
