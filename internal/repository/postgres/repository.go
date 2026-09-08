@@ -3,6 +3,7 @@ package postgres
 import (
 	errors1 "chatflow/internal/app-errors"
 	"chatflow/internal/model"
+	"chatflow/internal/protocol"
 	"context"
 	"errors"
 	"log"
@@ -188,7 +189,6 @@ func (r *Repository) ChatExists(ctx context.Context, from int, to int) (int, boo
   			 HAVING count(*) = 2`, from, to)
 
 	var chatID int
-
 	if err := row.Scan(&chatID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nullChat, false, nil
@@ -222,41 +222,50 @@ func (r *Repository) StartChat(ctx context.Context, from, to int) (int, error) {
 	return chatID, tx.Commit(ctx)
 }
 
-func (r *Repository) SendMessage(ctx context.Context, chatID, from int, message string) error {
+func (r *Repository) SendMessage(ctx context.Context, send protocol.Send, from int) (*protocol.Message, int, error) {
 
-	_, err := r.pool.Exec(ctx, `INSERT INTO messages(chat_id, sender_id, data, created_at)
-							VALUES($1, $2, $3, $4)`, chatID, from, message, time.Now())
-	if err != nil {
-		return err
+	row := r.pool.QueryRow(ctx, `WITH ins AS (
+      INSERT INTO messages (chat_id, sender_id, client_msg_id, data, created_at)
+      SELECT $1, $2, $3, $4, now()
+      WHERE EXISTS (
+          SELECT 1 FROM users_chats
+          WHERE chat_id = $1 AND user_id = $2
+      	)
+      	RETURNING id, chat_id, sender_id, data, created_at
+  		)
+  		SELECT ins.id, ins.chat_id, ins.sender_id, ins.data, ins.created_at, uc.user_id
+  		FROM ins
+  		JOIN users_chats uc ON uc.chat_id = ins.chat_id AND uc.user_id <> ins.sender_id`,
+		send.ChatID, from, send.ClientMsgID, send.Body)
+
+	var userID int
+	var msg protocol.Message
+	if err := row.Scan(&msg.Id,
+		&msg.ChatID,
+		&msg.SenderID,
+		&msg.Body,
+		&msg.Time,
+		&userID); err != nil {
+		return nil, nullID, err
 	}
 
-	return nil
+	return &msg, userID, nil
 }
 
-func (r *Repository) LoadMessages(ctx context.Context, from, to int) ([]model.Message, error) {
+func (r *Repository) LoadMessages(ctx context.Context, chatID, from int) ([]protocol.Message, error) {
 
-	var messages []model.Message
-	var chatID int
-	//TODO: Запрос на получение чата пока работает но при групповых чатах поломается
-	if err := r.pool.QueryRow(ctx,
-		`SELECT chat_id                                                                                                                                                                      
-  			 FROM users_chats                                                                                                                                                                    
-			 WHERE user_id IN ($1, $2)                                                                                                                                                           
-  			 GROUP BY chat_id                                                                                                                                                                    
-  			 HAVING COUNT(*) = 2`, from, to).Scan(&chatID); err != nil {
-		return nil, err
-	}
-
+	var messages []protocol.Message
 	rows, err := r.pool.Query(ctx,
 		`SELECT
+    			m.id,
+    			m.chat_id,
 				m.sender_id,
 				m.data,
 				m.created_at
 			 FROM messages m
-			 JOIN users_chats uc ON uc.chat_id = m.chat_id
-			 WHERE uc.user_id = $1 AND m.chat_id = $2
-			 ORDER BY m.created_at;
-			`, from, chatID)
+			 WHERE m.chat_id = $1 AND EXISTS (SELECT 1 FROM users_chats WHERE chat_id = $1 AND user_id = $2)
+			 ORDER BY m.created_at, m.id;
+			`, chatID, from)
 
 	if err != nil {
 		return nil, err
@@ -264,11 +273,13 @@ func (r *Repository) LoadMessages(ctx context.Context, from, to int) ([]model.Me
 	defer rows.Close()
 
 	for rows.Next() {
-		var message model.Message
+		var message protocol.Message
 		if err = rows.Scan(
-			&message.From,
-			&message.Data,
-			&message.CreatedAt); err != nil {
+			&message.Id,
+			&message.ChatID,
+			&message.SenderID,
+			&message.Body,
+			&message.Time); err != nil {
 			return nil, err
 		}
 
