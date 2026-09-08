@@ -1,7 +1,6 @@
 package service
 
 import (
-	errors1 "chatflow/internal/app-errors"
 	"chatflow/internal/model"
 	"chatflow/internal/protocol"
 	"chatflow/internal/repository/postgres"
@@ -11,6 +10,8 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 )
+
+const nullID = 0
 
 type Service struct {
 	db *postgres.Repository
@@ -144,28 +145,21 @@ func (s *Service) GetOrCreateChat(ctx context.Context, peerID, sender int) (int,
 	return chatID, nil
 }
 
-func (s *Service) SendMessage(ctx context.Context, message protocol.Send, from int) error {
-
-	chatID, ok, err := s.db.ChatExists(ctx, from, message.To)
-	if err != nil {
-		return err
-	}
-
-	if !ok {
-		chatID, err = s.db.StartChat(ctx, from, message.To)
-		if err != nil {
-			return err
-		}
-	}
-
-	if err = s.db.SendMessage(ctx, chatID, from, message.Message); err != nil {
-		return err
-	}
-
-	return nil
+func (s *Service) FindChat(ctx context.Context, userID, peerID int) (int, bool, error) {
+	return s.db.ChatExists(ctx, userID, peerID)
 }
 
-func (s *Service) LoadMessages(ctx context.Context, from, to int) ([]model.Message, error) {
+func (s *Service) SendMessage(ctx context.Context, message protocol.Send, from int) (*protocol.Message, int, error) {
 
-	return s.db.LoadMessages(ctx, from, to)
+	msg, userID, err := s.db.SendMessage(ctx, message, from)
+	if err != nil {
+		return nil, nullID, err
+	}
+
+	return msg, userID, nil
+}
+
+func (s *Service) LoadMessages(ctx context.Context, chatID, from int) ([]protocol.Message, error) {
+
+	return s.db.LoadMessages(ctx, chatID, from)
 }
