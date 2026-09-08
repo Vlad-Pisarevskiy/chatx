@@ -15,6 +15,7 @@ const (
 
 	messageType = "message"
 	userIdKey   = "userID"
+	chatIdKey   = "chatID"
 	tokenKey    = "token"
 	sendType    = "send"
 	peerID      = "peer_id"

@@ -1,6 +1,7 @@
 package server
 
 import (
+	errors1 "chatflow/internal/app-errors"
 	"chatflow/internal/hub"
 	"chatflow/internal/protocol"
 	"chatflow/internal/service"
@@ -87,6 +88,12 @@ func (s *Server) GetRouter() *gin.Engine {
 
 func (s *Server) GetPeer(c *gin.Context) {
 
+	userID, ok := c.Get(userIdKey)
+	if !ok {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
 	peer := c.Query(peerID)
 	if peer == emptyPeer {
 		c.Status(http.StatusBadRequest)
@@ -100,11 +107,16 @@ func (s *Server) GetPeer(c *gin.Context) {
 		})
 	}
 
-	chatID, err := s.service.FindChat(c.Request.Context(), id)
+	chatID, exist, err := s.service.FindChat(c.Request.Context(), userID.(int), id)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": err.Error(),
 		})
+	}
+
+	if !exist {
+		c.Status(http.StatusNotFound)
+		return
 	}
 
 	if chatID == nullID {
@@ -130,7 +142,7 @@ func (s *Server) Chats(c *gin.Context) {
 	id, ok := c.Get(userIdKey)
 	if !ok {
 		c.JSON(http.StatusBadGateway, gin.H{
-			"error": "no such user",
+			"error": errors1.ErrUserDoesntExist,
 		})
 		return
 	}
@@ -187,8 +199,8 @@ func (s *Server) LoadMessages(c *gin.Context) {
 		return
 	}
 
-	userTo := c.Param(userIdKey)
-	userID, err := strconv.Atoi(userTo)
+	chat := c.Param(chatIdKey)
+	chatID, err := strconv.Atoi(chat)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "unknown user id",
@@ -196,7 +208,7 @@ func (s *Server) LoadMessages(c *gin.Context) {
 		return
 	}
 
-	messages, err := s.service.LoadMessages(c.Request.Context(), userFrom.(int), userID)
+	messages, err := s.service.LoadMessages(c.Request.Context(), chatID, userFrom.(int))
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": err.Error(),
@@ -212,7 +224,7 @@ func (s *Server) Register(c *gin.Context) {
 	var registerRequest RegisterRequest
 	if err := c.ShouldBind(&registerRequest); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid data",
+			"error": errors1.ErrIncorrectData,
 		})
 		return
 	}

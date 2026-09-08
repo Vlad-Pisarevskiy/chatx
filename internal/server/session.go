@@ -1,7 +1,6 @@
 package server
 
 import (
-	errors1 "chatflow/internal/app-errors"
 	"chatflow/internal/hub"
 	"chatflow/internal/protocol"
 	"chatflow/internal/service"
@@ -96,11 +95,11 @@ func (s *session) readMessage() error {
 		}
 
 		if sendMessage.ChatID == nullID && sendMessage.PeerID == nullID {
-			return errors1.ErrIncorrectData
+			return nil
 		}
 
 		if sendMessage.ChatID != nullID && sendMessage.PeerID != nullID {
-			return errors1.ErrIncorrectData
+			return nil
 		}
 
 		if sendMessage.ChatID != nullID {
@@ -109,7 +108,8 @@ func (s *session) readMessage() error {
 		} else if sendMessage.PeerID != nullID {
 			chatID, err := s.service.GetOrCreateChat(s.ctx, sendMessage.PeerID, s.userID)
 			if err != nil {
-				return err
+				log.Println(err)
+				return nil
 			}
 			sendMessage.ChatID = chatID
 			s.sendToChat(sendMessage)
@@ -169,12 +169,9 @@ func (s *session) sendAck(clientMsgID string, messageID int, time2 time.Time) {
 	case s.msgChan <- data:
 	case <-s.ctx.Done():
 		return
-
 	}
 }
 
-// TODO: так, мне надо клиенту отправлять подтверждение что его сообщение пришло, как это сделать? С бд
-// с бд надо возвращать структуру которая мне нужнаа для отправки и отпраавлять, парсинг происхходит на уровне фроонтаа
 func (s *session) writer() {
 
 	ticker := time.NewTicker(tickerTiming)
@@ -206,10 +203,9 @@ func (s *session) sendMessage(msg protocol.Data) {
 	message, err := json.Marshal(msg)
 	if err != nil {
 		log.Println(err)
-		return
 	}
 
-	if err := s.conn.WriteMessage(websocket.TextMessage, message); err != nil {
+	if err = s.conn.WriteMessage(websocket.TextMessage, message); err != nil {
 		log.Println(err)
 		return
 	}
