@@ -9,12 +9,12 @@ CREATE TABLE users
 
 CREATE TABLE chats
 (
-    id int GENERATED ALWAYS AS IDENTITY PRIMARY KEY
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY
 );
 
 CREATE TABLE users_chats
 (
-    chat_id   INT REFERENCES chats (id),
+    chat_id   BIGINT REFERENCES chats (id) ON DELETE CASCADE,
     user_id   BIGINT REFERENCES users (id) ON DELETE CASCADE,
     last_read BIGINT,
     PRIMARY KEY (user_id, chat_id)
@@ -23,8 +23,9 @@ CREATE TABLE users_chats
 CREATE TABLE messages
 (
     id        BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    chat_id   INT REFERENCES chats (id) ON DELETE CASCADE NOT NULL ,
+    chat_id   BIGINT REFERENCES chats (id) ON DELETE CASCADE NOT NULL ,
     sender_id BIGINT REFERENCES users(id) NOT NULL,
+    client_msg_id uuid,
     data      TEXT,
     created_at timestamptz
 );
