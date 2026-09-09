@@ -1,6 +1,7 @@
 package server
 
 import (
+	"chatflow/internal/api"
 	errors1 "chatflow/internal/app-errors"
 	"chatflow/internal/hub"
 	"chatflow/internal/protocol"
@@ -83,7 +84,45 @@ func (s *Server) GetRouter() *gin.Engine {
 		chats.GET("/:chatID/messages", s.LoadMessages)
 	}
 
+	apiGroup := r.Group("/", s.authorization())
+	api.RegisterHandlers(apiGroup, s)
+
 	return r
+}
+
+func (s *Server) CreateGroup(c *gin.Context) {
+
+	userID, ok := c.Get(userIdKey)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": errors1.ErrIncorrectData,
+		})
+		return
+	}
+
+	var body api.CreateGroupJSONRequestBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": errors1.ErrIncorrectData,
+		})
+		return
+	}
+
+	group := service.GroupCreate{
+		OwnerID: userID.(int),
+		Name:    body.Name,
+		Members: body.MemberIds,
+	}
+
+	chatID, err := s.service.CreateGroup(c.Request.Context(), group)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, api.GroupCreated{ChatId: chatID})
 }
 
 func (s *Server) GetPeer(c *gin.Context) {
@@ -188,7 +227,6 @@ func (s *Server) Logout(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
-// TODO: Загрузка сообщений происходит по айди юзера, скорее всего надо будет на айди чата поменять
 func (s *Server) LoadMessages(c *gin.Context) {
 
 	userFrom, ok := c.Get(userIdKey)
