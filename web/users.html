@@ -98,6 +98,9 @@
   }
 
   .msg {
+    /* li — блочный, и при width:auto он занял бы все 60% даже под «ок».
+       fit-content сжимает пузырь по содержимому, а max-width остаётся потолком. */
+    width: fit-content;
     max-width: 60%;
     margin-bottom: 8px;
     padding: 8px 12px;
@@ -108,7 +111,16 @@
   .msg.mine { margin-left: auto; color: #fff; background: #0088b0; }
   .msg.theirs { background: #fff; border: 1px solid #e4e2e2; }
   .msg.sending { opacity: .55; }
+  .msg .at {
+    margin-left: 8px;
+    font-size: 11px;
+    white-space: nowrap;
+    user-select: none;
+  }
+  .msg.mine .at { color: rgba(255, 255, 255, .7); }
+  .msg.theirs .at { color: #8a8785; }
   .msg.system {
+    width: auto;
     max-width: none;
     margin: 8px 0;
     padding: 0;
@@ -314,22 +326,10 @@ async function resolveChat(peerId) {
   return payload.chat_id;
 }
 
-// get-or-create. Если чат успели создать параллельно (собеседник написал
-// первым в ту же секунду), ручка обязана вернуть существующий id, а не завести
-// второй чат на ту же пару — иначе переписка расползётся по двум лентам.
-async function createChat(peerId) {
-  const response = await fetch("/chats/direct", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ peer_id: Number(peerId) }),
-  });
-
-  if (!response.ok) throw new Error("createChat: " + response.status);
-
-  const payload = await response.json();
-  bindChat(payload.chat_id, peerId);
-  return payload.chat_id;
-}
+// Отдельной ручки создания чата нет. Чат заводит сервер на первом реальном
+// сообщении: клиент адресует его по peer_id, а id чата узнаёт из ack. Так
+// создание и отправка идут одним путём и не могут разойтись — при двух путях
+// собеседники, написавшие одновременно, завели бы два чата на одну пару.
 
 function bindChat(chatId, peerId) {
   chatIdByPeer.set(peerId, chatId);
@@ -338,10 +338,31 @@ function bindChat(chatId, peerId) {
 
 // --- лента ---
 
+// Сервер отдаёт время в RFC 3339 (UTC). Показываем локальное ЧЧ:ММ, а полную
+// дату кладём в title и datetime: в ленте она заняла бы половину пузыря.
+function timeElement(iso) {
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return null;
+
+  const el = document.createElement("time");
+  el.className = "at";
+  el.dateTime = date.toISOString();
+  el.title = date.toLocaleString();
+  el.textContent = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return el;
+}
+
 function bubble(message) {
   const li = document.createElement("li");
   li.className = "msg " + message.kind + (message.state === "sending" ? " sending" : "");
-  li.textContent = message.text; // textContent, а не innerHTML: текст приходит от другого пользователя
+
+  const text = document.createElement("span");
+  text.textContent = message.text; // textContent, а не innerHTML: текст приходит от другого пользователя
+  li.append(text);
+
+  // У системных заметок времени нет, и метка им не нужна.
+  const at = message.at ? timeElement(message.at) : null;
+  if (at) li.append(at);
 
   // По этому атрибуту ack находит нарисованный пузырь и снимает с него «отправляется».
   if (message.clientMsgId) li.dataset.cmid = message.clientMsgId;
@@ -457,7 +478,7 @@ function onMessage(payload) {
   }
 
   const kind = Number(payload.sender_id) === Number(myUserId) ? "mine" : "theirs";
-  push(peerId, { kind: kind, text: payload.body });
+  push(peerId, { kind: kind, text: payload.body, at: payload.time });
 }
 
 function onAck(payload) {
@@ -468,10 +489,27 @@ function onAck(payload) {
   if (!message) return;
   pending.delete(payload.client_msg_id);
 
+  // Сообщение уходило по peer_id — здесь мы впервые узнаём id чата. Без этой
+  // связки каждая следующая отправка снова шла бы по peer_id, а история не
+  // загрузилась бы вовсе: ей нужен chat_id.
+  if (payload.chat_id !== undefined && chatIdByPeer.get(message.peerId) === undefined) {
+    bindChat(payload.chat_id, message.peerId);
+    if (currentPeerId === message.peerId) currentChatId = payload.chat_id;
+  }
+
   message.state = "sent";
 
   const el = messagesEl.querySelector('[data-cmid="' + CSS.escape(payload.client_msg_id) + '"]');
   if (el) el.classList.remove("sending");
+
+  // Часы вкладки и часы сервера расходятся, а порядок в ленте задаёт сервер.
+  // Поэтому показанное время приводим к серверному, как только оно известно.
+  if (payload.time) {
+    message.at = payload.time;
+    const at = timeElement(payload.time);
+    const old = el && el.querySelector("time.at");
+    if (at && old) old.replaceWith(at);
+  }
 }
 
 function tryParse(raw) {
@@ -485,7 +523,7 @@ function tryParse(raw) {
 
 // --- отправка ---
 
-formEl.addEventListener("submit", async (event) => {
+formEl.addEventListener("submit", (event) => {
   event.preventDefault();
 
   const text = textEl.value.trim();
@@ -502,32 +540,27 @@ formEl.addEventListener("submit", async (event) => {
   textEl.value = "";
   textEl.focus();
 
-  // Вот здесь и только здесь чат заводится в базе — на первом реальном
-  // сообщении. Дальше id уже известен и вторая отправка идёт сразу в сокет.
-  let chatId = chatIdByPeer.get(peerId);
-  if (chatId === undefined) {
-    try {
-      chatId = await createChat(peerId);
-    } catch (err) {
-      console.error(err);
-      note("Не удалось начать чат, сообщение не отправлено");
-      return;
-    }
-    if (currentPeerId === peerId) currentChatId = chatId;
-  }
+  // Если чата ещё нет, id взять неоткуда — адресуем по собеседнику и ждём
+  // ack, он принесёт chat_id. Отправка при этом не блокируется ничем.
+  const chatId = chatIdByPeer.get(peerId);
 
   // Уникален между перезагрузками вкладки: счётчик после F5 начался бы заново,
   // сервер счёл бы новое сообщение ретраем старого и молча его потерял.
   const clientMsgId = crypto.randomUUID();
 
-  const message = { kind: "mine", text: text, state: "sending", clientMsgId: clientMsgId };
+  // peerId кладём в pending: в ack собеседника нет, а связать с ним чат надо.
+  // Время своё, по часам вкладки: пузырь рисуется до ответа сервера. В ack
+  // придёт то, что реально записано в базу, и заменит эту оценку.
+  const message = { kind: "mine", text: text, state: "sending", clientMsgId: clientMsgId, peerId: peerId, at: new Date().toISOString() };
   pending.set(clientMsgId, message);
   push(peerId, message);
 
   // from не шлём: отправителя сервер знает сам из токена, клиенту тут верить нельзя.
   socket.send(JSON.stringify({
     type: "send",
-    payload: { chat_id: chatId, body: text, client_msg_id: clientMsgId },
+    payload: chatId === undefined
+      ? { peer_id: Number(peerId), body: text, client_msg_id: clientMsgId }
+      : { chat_id: chatId, body: text, client_msg_id: clientMsgId },
   }));
 });
 
@@ -577,6 +610,7 @@ async function loadMessages(chatId, peerId) {
       return {
         kind: Number(message.sender_id) === Number(myUserId) ? "mine" : "theirs",
         text: message.body,
+        at: message.time,
       };
     }));
 

@@ -18,7 +18,7 @@ type Send struct {
 }
 
 type Message struct {
-	Id       int       `json:"id"`
+	Id       int       `json:"message_id"`
 	ChatID   int       `json:"chat_id"`
 	SenderID int       `json:"sender_id"`
 	Body     string    `json:"body"`
@@ -28,6 +28,7 @@ type Message struct {
 type Ack struct {
 	ClientMsgID string    `json:"client_msg_id"`
 	MessageID   int       `json:"message_id"`
+	ChatID      int       `json:"chat_id"`
 	Time        time.Time `json:"time"`
 }
 
