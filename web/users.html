@@ -108,7 +108,9 @@
     overflow-wrap: anywhere;
     white-space: pre-wrap;
   }
-  .msg.mine { margin-left: auto; color: #fff; background: #0088b0; }
+  /* Лента плоская, все реплики слева. Правая колонка «моё» работает только в личке:
+     в группе на N человек слева оказалась бы свалка из всех остальных без разбора. */
+  .msg.mine { color: #fff; background: #0088b0; }
   .msg.theirs { background: #fff; border: 1px solid #e4e2e2; }
   .msg.sending { opacity: .55; }
   .msg .at {
@@ -139,7 +141,9 @@
     color: #6b6867;
   }
 
-  form {
+  /* Именно #form, а не form: правила писались под единственную форму на странице,
+     а теперь их две — композитор внизу чата и мастер создания группы. */
+  #form {
     display: flex;
     gap: 8px;
     padding: 16px;
@@ -147,7 +151,7 @@
     border-top: 1px solid #c9c7c7;
   }
 
-  input {
+  input[type="text"] {
     flex: 1;
     padding: 10px;
     font: inherit;
@@ -155,9 +159,9 @@
     border: 1px solid #c9c7c7;
     border-radius: 2px;
   }
-  input:focus-visible { border-color: #0088b0; outline: 1px solid #0088b0; }
+  input[type="text"]:focus-visible { border-color: #0088b0; outline: 1px solid #0088b0; }
 
-  button[type="submit"] {
+  button[type="submit"], .primary {
     padding: 10px 20px;
     font: inherit;
     color: #fff;
@@ -166,6 +170,88 @@
     border-radius: 2px;
     cursor: pointer;
   }
+  /* --- создание группы --- */
+
+  #new-group {
+    width: 100%;
+    margin-top: 12px;
+    padding: 8px 12px;
+    font: inherit;
+    font-size: 14px;
+    color: #201e1d;
+    background: #fff;
+    border: 1px solid #c9c7c7;
+    border-radius: 2px;
+    cursor: pointer;
+  }
+  #new-group:hover { background: #f7f6f6; }
+
+  dialog {
+    width: min(420px, 92vw);
+    padding: 0;
+    color: inherit;
+    background: #fff;
+    border: 0;
+    border-radius: 4px;
+  }
+  dialog::backdrop { background: rgba(32, 30, 29, .45); }
+
+  dialog section { padding: 16px; }
+  dialog h2 { margin: 0 0 12px; font-size: 18px; }
+
+  .field { display: block; margin: 0 0 12px; font-size: 13px; color: #6b6867; }
+  .field input { width: 100%; margin-top: 4px; }
+
+  #members {
+    max-height: 40vh;
+    margin: 0 0 12px;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+    border: 1px solid #e4e2e2;
+    border-radius: 2px;
+  }
+  #members li { border-bottom: 1px solid #f0eeee; }
+  #members li:last-child { border-bottom: 0; }
+  #members label {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+  }
+  #members label:hover { background: #f7f6f6; }
+
+  .actions { display: flex; gap: 8px; justify-content: flex-end; margin: 0; }
+
+  .ghost {
+    padding: 10px 20px;
+    font: inherit;
+    color: #201e1d;
+    background: #fff;
+    border: 1px solid #c9c7c7;
+    border-radius: 2px;
+    cursor: pointer;
+  }
+  .ghost:hover { background: #f7f6f6; }
+
+  button[type="submit"]:disabled, .primary:disabled { background: #a6cbd8; cursor: default; }
+
+  .error { margin: 0 0 12px; font-size: 14px; color: #c2334d; }
+
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    margin: 0;
+    padding: 10px 16px;
+    font-size: 14px;
+    color: #fff;
+    background: #201e1d;
+    border-radius: 4px;
+  }
+
   [hidden] {
     display: none !important;
   }
@@ -181,6 +267,8 @@
       {{if .Me}}
       <p class="me">Вы вошли как {{.Me}}</p>
       {{end}}
+
+      <button type="button" id="new-group">Создать группу</button>
 
       <script>
         const myUserId = {{.MyID}};
@@ -218,6 +306,38 @@
     <button type="submit">Отправить</button>
   </form>
 </section>
+
+<dialog id="group-dialog">
+  <form id="group-form">
+    <section id="step-name">
+      <h2>Новая группа</h2>
+
+      <label class="field">Название
+        <input id="group-name" type="text" maxlength="50" autocomplete="off" placeholder="Например, Команда">
+      </label>
+
+      <p class="actions">
+        <button type="button" class="ghost" id="cancel-group">Отмена</button>
+        <button type="button" class="primary" id="to-members" disabled>Далее</button>
+      </p>
+    </section>
+
+    <section id="step-members" hidden>
+      <h2>Участники</h2>
+
+      <ul id="members"></ul>
+      <p class="empty" id="members-empty" hidden>Кроме вас пока никто не зарегистрирован</p>
+      <p class="error" id="group-error" hidden></p>
+
+      <p class="actions">
+        <button type="button" class="ghost" id="back-to-name">Назад</button>
+        <button type="submit" id="create-group" disabled>Создать чат</button>
+      </p>
+    </section>
+  </form>
+</dialog>
+
+<p id="toast" hidden></p>
 
 <script>
 "use strict";
@@ -621,6 +741,190 @@ async function loadMessages(chatId, peerId) {
   } catch (err) {
     console.error(err);
   }
+}
+
+// --- создание группы ---
+
+const newGroupEl = document.getElementById("new-group");
+const dialogEl = document.getElementById("group-dialog");
+const groupFormEl = document.getElementById("group-form");
+const stepNameEl = document.getElementById("step-name");
+const stepMembersEl = document.getElementById("step-members");
+const groupNameEl = document.getElementById("group-name");
+const toMembersEl = document.getElementById("to-members");
+const backToNameEl = document.getElementById("back-to-name");
+const cancelGroupEl = document.getElementById("cancel-group");
+const membersEl = document.getElementById("members");
+const membersEmptyEl = document.getElementById("members-empty");
+const groupErrorEl = document.getElementById("group-error");
+const createGroupEl = document.getElementById("create-group");
+const toastEl = document.getElementById("toast");
+
+// Оба шага живут в одном <dialog>: при двух отдельных окнах «Назад» терял бы
+// набранное название, а его пришлось бы возить между ними руками.
+newGroupEl.addEventListener("click", () => {
+  // Состояние сбрасываем на открытии, а не на закрытии: закрыть окно можно и по Esc,
+  // и кнопкой, и после успеха — одного места для сброса среди них нет.
+  groupFormEl.reset();
+  hideError();
+  toMembersEl.disabled = true;
+  showStep(stepNameEl);
+
+  dialogEl.showModal();
+  groupNameEl.focus();
+});
+
+cancelGroupEl.addEventListener("click", () => dialogEl.close());
+
+groupNameEl.addEventListener("input", () => {
+  toMembersEl.disabled = groupName() === "";
+});
+
+toMembersEl.addEventListener("click", () => nextStep());
+
+backToNameEl.addEventListener("click", () => {
+  hideError();
+  showStep(stepNameEl);
+  groupNameEl.focus();
+});
+
+membersEl.addEventListener("change", () => {
+  createGroupEl.disabled = checkedIds().length === 0;
+});
+
+function groupName() {
+  return groupNameEl.value.trim();
+}
+
+function showStep(step) {
+  stepNameEl.hidden = step !== stepNameEl;
+  stepMembersEl.hidden = step !== stepMembersEl;
+}
+
+function nextStep() {
+  if (groupName() === "") return;
+  fillMembers();
+  showStep(stepMembersEl);
+}
+
+// Участников берём из уже отрисованного списка слева: сервер отдал туда ровно
+// «всех, кроме меня» (GetUsersExcept). Отдельный запрос завёл бы второй источник
+// тех же людей — и первый же расход между ними пришлось бы ловить руками.
+function fillMembers() {
+  const users = usersEl.querySelectorAll(".user");
+
+  membersEl.replaceChildren();
+
+  for (const user of users) {
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.value = user.dataset.id;
+
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = user.dataset.name; // textContent: имя ввёл другой пользователь
+
+    const label = document.createElement("label");
+    label.append(box, name);
+
+    const li = document.createElement("li");
+    li.append(label);
+    membersEl.append(li);
+  }
+
+  membersEl.hidden = users.length === 0;
+  membersEmptyEl.hidden = users.length !== 0;
+  createGroupEl.disabled = true;
+}
+
+function checkedIds() {
+  return Array.from(membersEl.querySelectorAll("input:checked"), (box) => Number(box.value));
+}
+
+function showError(text) {
+  groupErrorEl.textContent = text;
+  groupErrorEl.hidden = false;
+}
+
+function hideError() {
+  groupErrorEl.hidden = true;
+}
+
+// #status занят состоянием сокета — подтверждение либо затёрло бы «нет связи»,
+// либо было бы затёрто ближайшим переподключением. Поэтому отдельная плашка.
+let creating = false;
+
+let toastTimer = null;
+function toast(text) {
+  toastEl.textContent = text;
+  toastEl.hidden = false;
+
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toastEl.hidden = true; }, 4000);
+}
+
+groupFormEl.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  // Enter в поле названия — это «Далее». Без этой ветки браузер отправил бы форму
+  // прямо с первого шага, когда участников ещё не выбирали.
+  if (!stepNameEl.hidden) {
+    nextStep();
+    return;
+  }
+
+  // Заблокированная кнопка — это только про UI, а submit у формы бывает и помимо неё.
+  // Вторая группа с тем же составом создалась бы молча, поэтому флаг, а не вид кнопки.
+  if (creating) return;
+
+  const name = groupName();
+  const memberIds = checkedIds();
+  if (name === "" || memberIds.length === 0) return;
+
+  hideError();
+  creating = true;
+  createGroupEl.disabled = true;
+
+  let response = null;
+  try {
+    response = await fetch("/chats/group", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // Себя в member_ids не кладём: отправителя сервер знает из токена, и своему же
+      // id из тела верить нельзя — ровно как при отправке сообщений.
+      body: JSON.stringify({ name: name, member_ids: memberIds }),
+    });
+  } catch (err) {
+    console.error(err);
+    failCreate("Нет связи с сервером");
+    return;
+  }
+
+
+  if (!response.ok) {
+    failCreate("Не удалось создать группу (" + response.status + ")");
+    return;
+  }
+
+  // Тело ответа нужно только ради chat_id, и без него создание всё равно состоялось —
+  // поэтому пустой или неразобранный ответ не считаем ошибкой.
+  const payload = await response.json().catch(() => null);
+  const chatId = payload ? payload.chat_id : undefined;
+
+  creating = false;
+  dialogEl.close();
+
+  // В сайдбар группу не добавляем: список слева — это люди, и чтобы группа стала
+  // кликабельной, ленте нужен ключ chat_id вместо peerId. Строка, по которой ничего
+  // не открывается, хуже её отсутствия.
+  toast("Группа «" + name + "» создана" + (chatId ? ", chat_id " + chatId : ""));
+});
+
+// Окно не закрываем: закрытие стёрло бы и название, и отметки — набирать заново.
+function failCreate(text) {
+  creating = false;
+  showError(text);
+  createGroupEl.disabled = false;
 }
 </script>
 

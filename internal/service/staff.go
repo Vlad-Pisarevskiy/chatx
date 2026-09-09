@@ -7,6 +7,18 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+type RegisterInput struct {
+	Name     string
+	Login    string
+	Password string
+}
+
+type GroupCreate struct {
+	OwnerID int
+	Name    string
+	Members []int
+}
+
 func (s *Service) validateRegister(ctx context.Context, user RegisterInput) error {
 
 	if err := correctLogin(user.Login); err != nil {

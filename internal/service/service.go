@@ -7,6 +7,7 @@ import (
 	"context"
 	rand "crypto/rand"
 	"crypto/sha256"
+	"slices"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -15,12 +16,6 @@ const nullID = 0
 
 type Service struct {
 	db *postgres.Repository
-}
-
-type RegisterInput struct {
-	Name     string
-	Login    string
-	Password string
 }
 
 func New(repo *postgres.Repository) *Service {
@@ -103,6 +98,20 @@ func (s *Service) Logout(ctx context.Context, token string) error {
 	}
 
 	return nil
+}
+
+func (s *Service) CreateGroup(ctx context.Context, group GroupCreate) (int, error) {
+
+	group.Members = append(group.Members, group.OwnerID)
+	slices.Sort(group.Members)
+	slices.Compact(group.Members)
+
+	chatID, err := s.db.CreateGroup(ctx, group.Name, group.Members)
+	if err != nil {
+		return nullID, err
+	}
+
+	return chatID, err
 }
 
 func (s *Service) FindUserByID(ctx context.Context, id int) (*model.UserFromDB, error) {

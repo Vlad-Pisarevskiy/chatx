@@ -252,6 +252,41 @@ func (r *Repository) SendMessage(ctx context.Context, send protocol.Send, from i
 	return &msg, userID, nil
 }
 
+func (r *Repository) CreateGroup(ctx context.Context, name string, members []int) (int, error) {
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nullChat, err
+	}
+	defer func(tx pgx.Tx, ctx context.Context) {
+		_ = tx.Rollback(ctx)
+	}(tx, ctx)
+
+	row := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE id = ANY($1)`, members)
+	var count int
+
+	if err := row.Scan(&count); err != nil {
+		return nullID, err
+	}
+
+	if count != len(members) {
+		return nullID, errors.New("incorrect list of users")
+	}
+
+	var chatID int
+	row = r.pool.QueryRow(ctx, `INSERT INTO chats(label) VALUES($1) RETURNING id`, name)
+	if err := row.Scan(&chatID); err != nil {
+		return nullID, err
+	}
+
+	_, err = r.pool.Exec(ctx, `INSERT INTO users_chats(chat_id, user_id) SELECT $1, unnest($2::bigint[])`, chatID, members)
+	if err != nil {
+		return nullID, err
+	}
+
+	return chatID, nil
+}
+
 func (r *Repository) LoadMessages(ctx context.Context, chatID, from int) ([]protocol.Message, error) {
 
 	var messages []protocol.Message

@@ -29,4 +29,7 @@ migrate-up:
 migrate-down:
 	go tool goose down
 
-.PHONY: server client compose integration migrate-up migrate-down migrate-status migrate-create
+generate:
+	go tool oapi-codegen --config api/codegen.yaml api/groups.yaml
+
+.PHONY: server client compose integration migrate-up migrate-down migrate-status migrate-create generate
