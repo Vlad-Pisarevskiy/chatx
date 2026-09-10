@@ -29,8 +29,21 @@
   aside h1 { margin: 0; font-size: 18px; }
   .me { margin: 4px 0 0; font-size: 13px; color: #6b6867; }
 
-  #users { flex: 1; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
-  #users li { border-bottom: 1px solid #f0eeee; }
+  /* Скроллится контейнер, а не список: списков теперь два, и разъезжаться
+     двумя независимыми полосами прокрутки им незачем. */
+  #lists { flex: 1; overflow-y: auto; }
+
+  #users, #groups { margin: 0; padding: 0; list-style: none; }
+  #users li, #groups li { border-bottom: 1px solid #f0eeee; }
+
+  .section {
+    margin: 0;
+    padding: 12px 16px 4px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #8a8785;
+  }
 
   .user {
     display: flex;
@@ -112,6 +125,13 @@
      в группе на N человек слева оказалась бы свалка из всех остальных без разбора. */
   .msg.mine { color: #fff; background: #0088b0; }
   .msg.theirs { background: #fff; border: 1px solid #e4e2e2; }
+  .msg .author {
+    display: block;
+    margin-bottom: 2px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #0088b0;
+  }
   .msg.sending { opacity: .55; }
   .msg .at {
     margin-left: 8px;
@@ -272,34 +292,54 @@
 
       <script>
         const myUserId = {{.MyID}};
+        const myName = {{.Me}};
       </script>
     </header>
   </header>
 
-  <ul id="users">
-    {{range .Users}}
-    <li>
-      <button type="button" class="user" data-id="{{.ID}}" data-name="{{.Name}}">
-        <span class="name">{{.Name}}</span>
-        <span class="login">{{.Login}}</span>
-        <span class="unread" hidden></span>
-      </button>
-    </li>
-    {{else}}
-    <li class="empty">Кроме вас пока никто не зарегистрирован</li>
-    {{end}}
-  </ul>
+  <div id="lists">
+    <p class="section">Люди</p>
+
+    <ul id="users">
+      {{range .Users}}
+      <li>
+        <button type="button" class="user" data-id="{{.ID}}" data-name="{{.Name}}">
+          <span class="name">{{.Name}}</span>
+          <span class="login">{{.Login}}</span>
+          <span class="unread" hidden></span>
+        </button>
+      </li>
+      {{else}}
+      <li class="empty">Кроме вас пока никто не зарегистрирован</li>
+      {{end}}
+    </ul>
+
+    <p class="section" id="groups-title" hidden>Группы</p>
+
+    <!-- if, а не голый range: пока сервер не кладёт Groups в шаблон, range по
+         отсутствующему ключу уронил бы отрисовку всей страницы. -->
+    <ul id="groups">
+      {{if .Groups}}{{range .Groups}}
+      <li>
+        <button type="button" class="user group" data-chat-id="{{.ID}}" data-name="{{.Name}}">
+          <span class="name">{{.Name}}</span>
+          <span class="unread" hidden></span>
+        </button>
+      </li>
+      {{end}}{{end}}
+    </ul>
+  </div>
 </aside>
 
 <section class="chat">
   <header>
-    <h2 id="peer">Выберите собеседника</h2>
+    <h2 id="peer">Выберите чат</h2>
     <span id="status">соединение…</span>
     <button type="button" id="logout">Выйти из аккаунта</button>
   </header>
 
   <ol id="messages" hidden></ol>
-  <p id="placeholder">Выберите человека слева, чтобы написать ему</p>
+  <p id="placeholder">Выберите чат слева, чтобы начать переписку</p>
 
   <form id="form" hidden>
     <input id="text" type="text" placeholder="Сообщение" autocomplete="off" required>
@@ -343,6 +383,8 @@
 "use strict";
 
 const usersEl = document.getElementById("users");
+const groupsEl = document.getElementById("groups");
+const groupsTitleEl = document.getElementById("groups-title");
 const messagesEl = document.getElementById("messages");
 const placeholderEl = document.getElementById("placeholder");
 const formEl = document.getElementById("form");
@@ -351,13 +393,19 @@ const peerEl = document.getElementById("peer");
 const statusEl = document.getElementById("status");
 const logoutEl = document.getElementById("logout");
 
-// peerId (строка) -> массив реплик. Лента живёт в памяти вкладки; историю
-// подтягиваем с сервера при открытии переписки.
-const history = new Map();
+// Ключ диалога: "u:<id пользователя>" для лички, "g:<id чата>" для группы.
+// Почему не chat_id для всех: у лички чата может ещё не быть — он заводится
+// на первом сообщении, а человек в списке уже есть. Личность собеседника при
+// этом не меняется, а chat_id появляется позже, и ключ по типу это разводит.
+const history = new Map();      // ключ -> массив реплик, лента живёт в памяти вкладки
 
-// Слева список пользователей, а адресуется всё по чатам — держим связку в обе стороны.
-const chatIdByPeer = new Map();   // peerId (строка) -> chatId (число)
-const peerIdByChat = new Map();   // chatId (число)  -> peerId (строка)
+// Адресуется всё по чатам — держим связку в обе стороны.
+const chatIdByKey = new Map();  // ключ -> chatId (число)
+const keyByChat = new Map();    // chatId (число) -> ключ
+
+// id пользователя -> имя. В кадре сообщения есть только sender_id, а в группе
+// без имени отправителя лента нечитаема. Берём из уже отрисованного списка слева.
+const userNames = new Map();
 
 // client_msg_id -> ещё не подтверждённое сообщение, ждёт ack.
 const pending = new Map();
@@ -366,7 +414,7 @@ const pending = new Map();
 // историей, эхом собственного сообщения и ack.
 const seenMessageIds = new Set();
 
-let currentPeerId = null;
+let currentKey = null;
 let currentChatId = null;
 let socket = null;
 let reconnectDelay = 1000;
@@ -374,26 +422,47 @@ let everConnected = false;
 let failedAttempts = 0;
 let loggedOut = false;
 
-// --- выбор собеседника ---
+// --- выбор диалога ---
+
+function userKey(userId) { return "u:" + userId; }
+function groupKey(chatId) { return "g:" + chatId; }
+function peerIdOf(key) { return key.slice(2); }
+function isGroup(key) { return key.startsWith("g:"); }
+
+// У группы чат существует с самого начала, поэтому связку ключ-чат заполняем
+// сразу при загрузке: по ней входящие кадры попадут в нужную ленту, даже если
+// по группе ни разу не кликали.
+for (const button of groupsEl.querySelectorAll(".group")) {
+  bindChat(Number(button.dataset.chatId), groupKey(button.dataset.chatId));
+}
+groupsTitleEl.hidden = groupsEl.children.length === 0;
+
+userNames.set(Number(myUserId), myName);
+for (const button of usersEl.querySelectorAll(".user")) {
+  userNames.set(Number(button.dataset.id), button.dataset.name);
+}
 
 usersEl.addEventListener("click", (event) => {
   const button = event.target.closest(".user");
-  if (button) selectUser(button.dataset.id, button.dataset.name);
+  if (!button) return;
+
+  const key = userKey(button.dataset.id);
+  // Для лички чата может не быть вовсе — тогда null, и его поищет openConversation.
+  const known = chatIdByKey.get(key);
+  openConversation(key, button.dataset.name, known === undefined ? null : known);
 });
 
-async function selectUser(peerId, name) {
-  currentPeerId = peerId;
-  currentChatId = null;
+groupsEl.addEventListener("click", (event) => {
+  const button = event.target.closest(".group");
+  if (button) openConversation(groupKey(button.dataset.chatId), button.dataset.name, Number(button.dataset.chatId));
+});
+
+async function openConversation(key, name, chatId) {
+  currentKey = key;
+  currentChatId = chatId;
   peerEl.textContent = name;
 
-  for (const button of usersEl.querySelectorAll(".user")) {
-    const active = button.dataset.id === peerId;
-    button.classList.toggle("active", active);
-
-    if (active) {
-      button.querySelector(".unread").hidden = true;
-    }
-  }
+  markActive(key);
 
   placeholderEl.hidden = true;
   messagesEl.hidden = false;
@@ -402,47 +471,66 @@ async function selectUser(peerId, name) {
   messagesEl.replaceChildren();
   textEl.focus();
 
-  // Клик — операция только на чтение. Спрашиваем, есть ли уже чат с этим
-  // человеком, и ничего не создаём: иначе база забивалась бы пустыми чатами
-  // от одного лишь просмотра списка.
-  let chatId = null;
-  try {
-    chatId = await resolveChat(peerId);
-  } catch (err) {
-    console.error(err);
-    note("Не удалось открыть переписку");
-    return;
-  }
-
-  // Пока шёл запрос, могли кликнуть по другому человеку — ответ уже не наш.
-  if (currentPeerId !== peerId) return;
-
-  currentChatId = chatId;
-
-  // chatId === null значит, что переписки ещё не было. Это не ошибка: лента
-  // пустая, чат появится в базе при отправке первого сообщения.
   if (chatId === null) {
-    renderHistory(peerId);
-    return;
+    // Клик по человеку — операция только на чтение. Спрашиваем, есть ли уже чат,
+    // и ничего не создаём: иначе база забивалась бы пустыми чатами от одного
+    // лишь просмотра списка. У группы этой ветки нет — её чат уже существует.
+    try {
+      chatId = await resolveChat(key);
+    } catch (err) {
+      console.error(err);
+      note("Не удалось открыть переписку");
+      return;
+    }
+
+    // Пока шёл запрос, могли открыть другой диалог — ответ уже не наш.
+    if (currentKey !== key) return;
+
+    currentChatId = chatId;
+
+    // null значит, что переписки ещё не было. Это не ошибка: лента пустая,
+    // чат появится в базе при отправке первого сообщения.
+    if (chatId === null) {
+      renderHistory(key);
+      return;
+    }
   }
 
-  await loadMessages(chatId, peerId);
+  await loadMessages(chatId, key);
+}
+
+// Подсветка идёт по обоим спискам сразу: активный диалог всегда один.
+function markActive(key) {
+  for (const button of document.querySelectorAll(".user")) {
+    const active = keyOf(button) === key;
+    button.classList.toggle("active", active);
+
+    if (active) {
+      button.querySelector(".unread").hidden = true;
+    }
+  }
+}
+
+function keyOf(button) {
+  return button.classList.contains("group")
+    ? groupKey(button.dataset.chatId)
+    : userKey(button.dataset.id);
 }
 
 // --- чаты ---
 
 // Поиск чата, без создания. 404 — переписки не было, это штатный ответ.
-async function resolveChat(peerId) {
-  const known = chatIdByPeer.get(peerId);
+async function resolveChat(key) {
+  const known = chatIdByKey.get(key);
   if (known !== undefined) return known;
 
-  const response = await fetch("/chats/direct?peer_id=" + encodeURIComponent(peerId));
+  const response = await fetch("/chats/direct?peer_id=" + encodeURIComponent(peerIdOf(key)));
 
   if (response.status === 404) return null;
   if (!response.ok) throw new Error("resolveChat: " + response.status);
 
   const payload = await response.json();
-  bindChat(payload.chat_id, peerId);
+  bindChat(payload.chat_id, key);
   return payload.chat_id;
 }
 
@@ -451,9 +539,9 @@ async function resolveChat(peerId) {
 // создание и отправка идут одним путём и не могут разойтись — при двух путях
 // собеседники, написавшие одновременно, завели бы два чата на одну пару.
 
-function bindChat(chatId, peerId) {
-  chatIdByPeer.set(peerId, chatId);
-  peerIdByChat.set(chatId, peerId);
+function bindChat(chatId, key) {
+  chatIdByKey.set(key, chatId);
+  keyByChat.set(chatId, key);
 }
 
 // --- лента ---
@@ -476,6 +564,15 @@ function bubble(message) {
   const li = document.createElement("li");
   li.className = "msg " + message.kind + (message.state === "sending" ? " sending" : "");
 
+  // В группе без подписи не понять, кто написал: собеседников много,
+  // а различаются реплики только цветом.
+  if (message.author) {
+    const author = document.createElement("span");
+    author.className = "author";
+    author.textContent = message.author;
+    li.append(author);
+  }
+
   const text = document.createElement("span");
   text.textContent = message.text; // textContent, а не innerHTML: текст приходит от другого пользователя
   li.append(text);
@@ -494,30 +591,46 @@ function scrollDown() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-function renderHistory(peerId) {
+function renderHistory(key) {
   messagesEl.replaceChildren();
-  for (const message of history.get(peerId) || []) {
+  for (const message of history.get(key) || []) {
     messagesEl.append(bubble(message));
   }
   scrollDown();
 }
 
-function push(peerId, message) {
-  if (!history.has(peerId)) history.set(peerId, []);
-  history.get(peerId).push(message);
+function push(key, message) {
+  if (!history.has(key)) history.set(key, []);
+  history.get(key).push(message);
 
-  if (peerId === currentPeerId) {
+  if (key === currentKey) {
     messagesEl.append(bubble(message));
     scrollDown();
     return;
   }
 
-  const button = usersEl.querySelector('.user[data-id="' + CSS.escape(peerId) + '"]');
+  const button = itemByKey(key);
   if (button) button.querySelector(".unread").hidden = false;
 }
 
+// Строка в сайдбаре по ключу: люди и группы лежат в разных списках и
+// адресуются разными атрибутами.
+function itemByKey(key) {
+  const value = CSS.escape(key.slice(2));
+  return isGroup(key)
+    ? groupsEl.querySelector('.group[data-chat-id="' + value + '"]')
+    : usersEl.querySelector('.user[data-id="' + value + '"]');
+}
+
+// Подпись нужна только в группе и только под чужими репликами: в личке
+// собеседник один и назван в заголовке, свои реплики выделены цветом.
+function authorFor(key, senderId, mine) {
+  if (mine || !isGroup(key)) return null;
+  return userNames.get(Number(senderId)) || "участник";
+}
+
 function note(text) {
-  if (currentPeerId) push(currentPeerId, { kind: "system", text: text });
+  if (currentKey) push(currentKey, { kind: "system", text: text });
 }
 
 // --- сокет ---
@@ -587,18 +700,25 @@ function onMessage(payload) {
   if (seenMessageIds.has(payload.message_id)) return;
   seenMessageIds.add(payload.message_id);
 
-  let peerId = peerIdByChat.get(payload.chat_id);
+  let key = keyByChat.get(payload.chat_id);
 
-  // Чат нам незнаком — значит, собеседник написал первым, а мы на него не кликали.
-  // В личном чате отправитель и есть собеседник, так что связку узнаём отсюда.
-  if (peerId === undefined) {
+  // Чат незнаком — значит это личка, в которой собеседник написал первым, а мы
+  // на него не кликали: группы известны с загрузки страницы. В личке отправитель
+  // и есть собеседник, так что связку узнаём отсюда.
+  if (key === undefined) {
     if (Number(payload.sender_id) === Number(myUserId)) return;
-    peerId = String(payload.sender_id);
-    bindChat(payload.chat_id, peerId);
+    key = userKey(payload.sender_id);
+    bindChat(payload.chat_id, key);
   }
 
-  const kind = Number(payload.sender_id) === Number(myUserId) ? "mine" : "theirs";
-  push(peerId, { kind: kind, text: payload.body, at: payload.time });
+  const mine = Number(payload.sender_id) === Number(myUserId);
+  push(key, {
+    id: payload.message_id,
+    kind: mine ? "mine" : "theirs",
+    text: payload.body,
+    at: payload.time,
+    author: authorFor(key, payload.sender_id, mine),
+  });
 }
 
 function onAck(payload) {
@@ -612,12 +732,18 @@ function onAck(payload) {
   // Сообщение уходило по peer_id — здесь мы впервые узнаём id чата. Без этой
   // связки каждая следующая отправка снова шла бы по peer_id, а история не
   // загрузилась бы вовсе: ей нужен chat_id.
-  if (payload.chat_id !== undefined && chatIdByPeer.get(message.peerId) === undefined) {
-    bindChat(payload.chat_id, message.peerId);
-    if (currentPeerId === message.peerId) currentChatId = payload.chat_id;
+  //
+  // Проверка на положительное число, а не на undefined: сервер сейчас не
+  // заполняет chat_id в ack, и оттуда приходит ноль. Связаться по нулю значит
+  // отправлять следующие сообщения с chat_id: 0, а такой кадр сервер молча
+  // выбрасывает — вся переписка обрывалась бы после первой реплики.
+  if (payload.chat_id > 0 && chatIdByKey.get(message.key) === undefined) {
+    bindChat(payload.chat_id, message.key);
+    if (currentKey === message.key) currentChatId = payload.chat_id;
   }
 
   message.state = "sent";
+  message.id = payload.message_id; // с этого момента своя реплика тоже узнаётся в истории
 
   const el = messagesEl.querySelector('[data-cmid="' + CSS.escape(payload.client_msg_id) + '"]');
   if (el) el.classList.remove("sending");
@@ -647,39 +773,40 @@ formEl.addEventListener("submit", (event) => {
   event.preventDefault();
 
   const text = textEl.value.trim();
-  if (!text || !currentPeerId) return;
+  if (!text || !currentKey) return;
 
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     note("Нет связи с сервером, сообщение не отправлено");
     return;
   }
 
-  // Запоминаем, кому пишем: пока создаётся чат, пользователь может уйти в другую переписку.
-  const peerId = currentPeerId;
+  // Запоминаем, куда пишем: пока создаётся чат, пользователь может уйти в другой диалог.
+  const key = currentKey;
 
   textEl.value = "";
   textEl.focus();
 
   // Если чата ещё нет, id взять неоткуда — адресуем по собеседнику и ждём
   // ack, он принесёт chat_id. Отправка при этом не блокируется ничем.
-  const chatId = chatIdByPeer.get(peerId);
+  // У группы chat_id известен всегда, так что эта ветка её не касается.
+  const chatId = chatIdByKey.get(key);
 
   // Уникален между перезагрузками вкладки: счётчик после F5 начался бы заново,
   // сервер счёл бы новое сообщение ретраем старого и молча его потерял.
   const clientMsgId = crypto.randomUUID();
 
-  // peerId кладём в pending: в ack собеседника нет, а связать с ним чат надо.
+  // Ключ кладём в pending: в ack диалога нет, а связать с ним чат надо.
   // Время своё, по часам вкладки: пузырь рисуется до ответа сервера. В ack
   // придёт то, что реально записано в базу, и заменит эту оценку.
-  const message = { kind: "mine", text: text, state: "sending", clientMsgId: clientMsgId, peerId: peerId, at: new Date().toISOString() };
+  const message = { kind: "mine", text: text, state: "sending", clientMsgId: clientMsgId, key: key, at: new Date().toISOString() };
   pending.set(clientMsgId, message);
-  push(peerId, message);
+  push(key, message);
 
   // from не шлём: отправителя сервер знает сам из токена, клиенту тут верить нельзя.
   socket.send(JSON.stringify({
     type: "send",
     payload: chatId === undefined
-      ? { peer_id: Number(peerId), body: text, client_msg_id: clientMsgId }
+      ? { peer_id: Number(peerIdOf(key)), body: text, client_msg_id: clientMsgId }
       : { chat_id: chatId, body: text, client_msg_id: clientMsgId },
   }));
 });
@@ -712,7 +839,7 @@ logoutEl.addEventListener("click", async () => {
 });
 
 // История сообщений
-async function loadMessages(chatId, peerId) {
+async function loadMessages(chatId, key) {
   try {
     const response = await fetch("/chats/" + chatId + "/messages");
 
@@ -722,21 +849,34 @@ async function loadMessages(chatId, peerId) {
 
     const messages = await response.json();
 
-    history.set(peerId, messages.map((message) => {
+    const loaded = messages.map((message) => {
       // Тот же id, что и в live-потоке: сообщение, пришедшее между запросом
       // истории и её отрисовкой, придёт дважды и будет отброшено по нему.
       seenMessageIds.add(message.message_id);
 
+      const mine = Number(message.sender_id) === Number(myUserId);
+
       return {
-        kind: Number(message.sender_id) === Number(myUserId) ? "mine" : "theirs",
+        id: message.message_id,
+        kind: mine ? "mine" : "theirs",
         text: message.body,
         at: message.time,
+        author: authorFor(key, message.sender_id, mine),
       };
-    }));
+    });
 
-    if (currentPeerId !== peerId) return;
+    // Историю склеиваем с тем, что уже накопилось в ленте, а не заменяем ею.
+    // Замена теряла бы сообщения, пришедшие живым потоком после того, как сервер
+    // собрал ответ, — а также ещё не подтверждённые свои реплики и заметки.
+    const loadedIds = new Set(messages.map((message) => message.message_id));
+    const kept = (history.get(key) || []).filter(
+      (message) => message.id === undefined || !loadedIds.has(message.id));
 
-    renderHistory(peerId);
+    history.set(key, loaded.concat(kept));
+
+    if (currentKey !== key) return;
+
+    renderHistory(key);
 
   } catch (err) {
     console.error(err);
@@ -914,11 +1054,39 @@ groupFormEl.addEventListener("submit", async (event) => {
   creating = false;
   dialogEl.close();
 
-  // В сайдбар группу не добавляем: список слева — это люди, и чтобы группа стала
-  // кликабельной, ленте нужен ключ chat_id вместо peerId. Строка, по которой ничего
-  // не открывается, хуже её отсутствия.
-  toast("Группа «" + name + "» создана" + (chatId ? ", chat_id " + chatId : ""));
+  // Группа уже существует на сервере, id пришёл в ответе — рисуем строку сразу,
+  // чтобы не требовать перезагрузки. При следующей загрузке она приедет из шаблона.
+  if (chatId) addGroup(chatId, name);
+
+  toast("Группа «" + name + "» создана");
 });
+
+function addGroup(chatId, name) {
+  if (keyByChat.has(chatId)) return;
+
+  const label = document.createElement("span");
+  label.className = "name";
+  label.textContent = name; // textContent: название придёт обратно от сервера
+
+  const unread = document.createElement("span");
+  unread.className = "unread";
+  unread.hidden = true;
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "user group";
+  button.dataset.chatId = chatId;
+  button.dataset.name = name;
+  button.append(label, unread);
+
+  const li = document.createElement("li");
+  li.append(button);
+
+  groupsEl.append(li);
+  groupsTitleEl.hidden = false;
+
+  bindChat(chatId, groupKey(chatId));
+}
 
 // Окно не закрываем: закрытие стёрло бы и название, и отметки — набирать заново.
 function failCreate(text) {

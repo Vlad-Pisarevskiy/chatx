@@ -31,3 +31,5 @@ var ErrEmptyDatabasePath = errors.New("empty database path")
 var ErrIncorrectData = errors.New("incorrect data")
 
 var ErrUserDoesntExist = errors.New("user doesnt exist")
+
+var ErrNotChatMember = errors.New("user is not a chat member")

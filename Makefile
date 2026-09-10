@@ -12,7 +12,7 @@ integration:
 	go test ./internal/test/
 
 postgres:
-	docker compose -f docker-compose.postgres.yaml up
+	docker compose up -d postgres
 
 client:
 	go run cmd/client/client.go
@@ -21,7 +21,7 @@ compose-up:
 	docker compose up --build -d
 
 compose-down:
-	docker compose down
+	docker compose down -v
 
 migrate-up:
 	go tool goose up
