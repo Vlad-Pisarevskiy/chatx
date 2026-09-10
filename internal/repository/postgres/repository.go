@@ -18,9 +18,7 @@ type Repository struct {
 }
 
 const (
-	null   = 0
-	nullID = 0
-	nullChat
+	nullID         = 0
 	tokenTTL       = time.Hour * 24
 	tokenThreshold = time.Hour * 12
 )
@@ -179,19 +177,39 @@ func (r *Repository) GetUsers(ctx context.Context) ([]*model.UserFromDB, error) 
 	return users, nil
 }
 
+func (r *Repository) GetGroups(ctx context.Context, userID int) ([]model.GroupFromDB, error) {
+
+	rows, err := r.pool.Query(ctx, `SELECT c.id, c.label FROM chats c 
+										JOIN users_chats uc ON uc.chat_id = c.id 
+										WHERE c.type = 'group' AND uc.user_id = $1`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	groups, err := pgx.CollectRows(rows, pgx.RowToStructByName[model.GroupFromDB])
+	if err != nil {
+		return nil, err
+	}
+
+	return groups, nil
+}
+
 func (r *Repository) ChatExists(ctx context.Context, from int, to int) (int, bool, error) {
 
 	row := r.pool.QueryRow(ctx,
-		`SELECT chat_id                                                                                                                                                                      
-  			 FROM users_chats                                                                                                                                                                    
-			 WHERE user_id IN ($1, $2)                                                                                                                                                           
-  			 GROUP BY chat_id                                                                                                                                                                    
-  			 HAVING count(*) = 2`, from, to)
+		`SELECT uc.chat_id
+			 FROM users_chats uc
+			 JOIN chats c ON c.id = uc.chat_id AND c.type = 'direct'
+			 WHERE uc.user_id IN ($1, $2)
+			 GROUP BY uc.chat_id
+			 HAVING count(*) = 2
+			 LIMIT 1`, from, to)
 
 	var chatID int
 	if err := row.Scan(&chatID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nullChat, false, nil
+			return nullID, false, nil
 		}
 		return chatID, true, err
 	}
@@ -203,7 +221,7 @@ func (r *Repository) StartChat(ctx context.Context, from, to int) (int, error) {
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nullChat, err
+		return nullID, err
 	}
 	defer func(tx pgx.Tx, ctx context.Context) {
 		_ = tx.Rollback(ctx)
@@ -211,58 +229,60 @@ func (r *Repository) StartChat(ctx context.Context, from, to int) (int, error) {
 
 	var chatID int
 	if err = tx.QueryRow(ctx, `INSERT INTO chats DEFAULT VALUES RETURNING id`).Scan(&chatID); err != nil {
-		return nullChat, err
+		return nullID, err
 	}
 
 	_, err = tx.Exec(ctx, `INSERT INTO users_chats (chat_id, user_id) VALUES ($1, $2), ($1, $3)`, chatID, from, to)
 	if err != nil {
-		return nullChat, err
+		return nullID, err
 	}
 
 	return chatID, tx.Commit(ctx)
 }
 
-func (r *Repository) SendMessage(ctx context.Context, send protocol.Send, from int) (*protocol.Message, int, error) {
+func (r *Repository) SendMessage(ctx context.Context, send protocol.Send, from int) (*protocol.Message, []int, error) {
 
-	row := r.pool.QueryRow(ctx, `WITH ins AS (
-      INSERT INTO messages (chat_id, sender_id, client_msg_id, data, created_at)
-      SELECT $1, $2, $3, $4, now()
-      WHERE EXISTS (
-          SELECT 1 FROM users_chats
-          WHERE chat_id = $1 AND user_id = $2
-      	)
-      	RETURNING id, chat_id, sender_id, data, created_at
-  		)
-  		SELECT ins.id, ins.chat_id, ins.sender_id, ins.data, ins.created_at, uc.user_id
-  		FROM ins
-  		JOIN users_chats uc ON uc.chat_id = ins.chat_id AND uc.user_id <> ins.sender_id`,
+	row := r.pool.QueryRow(ctx, `INSERT INTO messages (chat_id, sender_id, client_msg_id, data, created_at)
+		SELECT $1, $2, $3, $4, now()
+		WHERE EXISTS (SELECT 1 FROM users_chats WHERE chat_id = $1 AND user_id = $2)
+		RETURNING id, created_at`,
 		send.ChatID, from, send.ClientMsgID, send.Body)
 
-	var userID int
 	var msg protocol.Message
-	if err := row.Scan(&msg.Id,
-		&msg.ChatID,
-		&msg.SenderID,
-		&msg.Body,
-		&msg.Time,
-		&userID); err != nil {
-		return nil, nullID, err
+	if err := row.Scan(&msg.Id, &msg.Time); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, errors1.ErrNotChatMember
+		}
+		return nil, nil, err
+	}
+	msg.ChatID = send.ChatID
+	msg.SenderID = from
+	msg.Body = send.Body
+
+	rows, err := r.pool.Query(ctx, `SELECT user_id FROM users_chats WHERE chat_id = $1`, send.ChatID)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	return &msg, userID, nil
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[int])
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &msg, ids, nil
 }
 
 func (r *Repository) CreateGroup(ctx context.Context, name string, members []int) (int, error) {
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nullChat, err
+		return nullID, err
 	}
 	defer func(tx pgx.Tx, ctx context.Context) {
 		_ = tx.Rollback(ctx)
 	}(tx, ctx)
 
-	row := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE id = ANY($1)`, members)
+	row := tx.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE id = ANY($1)`, members)
 	var count int
 
 	if err := row.Scan(&count); err != nil {
@@ -274,15 +294,17 @@ func (r *Repository) CreateGroup(ctx context.Context, name string, members []int
 	}
 
 	var chatID int
-	row = r.pool.QueryRow(ctx, `INSERT INTO chats(label) VALUES($1) RETURNING id`, name)
+	row = tx.QueryRow(ctx, `INSERT INTO chats(label, type) VALUES($1, 'group') RETURNING id`, name)
 	if err := row.Scan(&chatID); err != nil {
 		return nullID, err
 	}
 
-	_, err = r.pool.Exec(ctx, `INSERT INTO users_chats(chat_id, user_id) SELECT $1, unnest($2::bigint[])`, chatID, members)
+	_, err = tx.Exec(ctx, `INSERT INTO users_chats(chat_id, user_id) SELECT $1, unnest($2::bigint[])`, chatID, members)
 	if err != nil {
 		return nullID, err
 	}
+
+	tx.Commit(ctx)
 
 	return chatID, nil
 }
@@ -332,7 +354,7 @@ func (r *Repository) DeleteExpiredTokens(ctx context.Context) (int64, error) {
 
 	tag, err := r.pool.Exec(ctx, `DELETE FROM tokens WHERE expires_at < $1`, time.Now())
 	if err != nil {
-		return null, err
+		return nullID, err
 	}
 
 	return tag.RowsAffected(), nil
