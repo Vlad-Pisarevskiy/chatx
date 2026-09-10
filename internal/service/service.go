@@ -104,7 +104,7 @@ func (s *Service) CreateGroup(ctx context.Context, group GroupCreate) (int, erro
 
 	group.Members = append(group.Members, group.OwnerID)
 	slices.Sort(group.Members)
-	slices.Compact(group.Members)
+	group.Members = slices.Compact(group.Members)
 
 	chatID, err := s.db.CreateGroup(ctx, group.Name, group.Members)
 	if err != nil {
@@ -112,6 +112,11 @@ func (s *Service) CreateGroup(ctx context.Context, group GroupCreate) (int, erro
 	}
 
 	return chatID, err
+}
+
+func (s *Service) GetGroups(ctx context.Context, userID int) ([]model.GroupFromDB, error) {
+
+	return s.db.GetGroups(ctx, userID)
 }
 
 func (s *Service) FindUserByID(ctx context.Context, id int) (*model.UserFromDB, error) {
@@ -158,11 +163,11 @@ func (s *Service) FindChat(ctx context.Context, userID, peerID int) (int, bool, 
 	return s.db.ChatExists(ctx, userID, peerID)
 }
 
-func (s *Service) SendMessage(ctx context.Context, message protocol.Send, from int) (*protocol.Message, int, error) {
+func (s *Service) SendMessage(ctx context.Context, message protocol.Send, from int) (*protocol.Message, []int, error) {
 
 	msg, userID, err := s.db.SendMessage(ctx, message, from)
 	if err != nil {
-		return nil, nullID, err
+		return nil, nil, err
 	}
 
 	return msg, userID, nil
