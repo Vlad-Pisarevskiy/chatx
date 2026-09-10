@@ -94,11 +94,8 @@ func (s *session) readMessage() error {
 			return nil
 		}
 
-		if sendMessage.ChatID == nullID && sendMessage.PeerID == nullID {
-			return nil
-		}
-
-		if sendMessage.ChatID != nullID && sendMessage.PeerID != nullID {
+		if sendMessage.ChatID == nullID && sendMessage.PeerID == nullID ||
+			sendMessage.ChatID != nullID && sendMessage.PeerID != nullID {
 			return nil
 		}
 
@@ -125,12 +122,12 @@ func (s *session) readMessage() error {
 
 func (s *session) sendToChat(send protocol.Send) {
 
-	message, userID, err := s.service.SendMessage(s.ctx, send, s.userID)
+	message, userIDs, err := s.service.SendMessage(s.ctx, send, s.userID)
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	s.sendAck(send.ClientMsgID, message.Id, message.Time)
+	s.sendAck(send.ClientMsgID, message.Id, message.ChatID, message.Time)
 
 	msg, err := json.Marshal(message)
 	if err != nil {
@@ -143,14 +140,15 @@ func (s *session) sendToChat(send protocol.Send) {
 		Payload: msg,
 	}
 
-	s.hub.Send(userID, &data)
+	s.hub.Send(userIDs, &data)
 }
 
-func (s *session) sendAck(clientMsgID string, messageID int, time2 time.Time) {
+func (s *session) sendAck(clientMsgID string, messageID, chatID int, time2 time.Time) {
 
 	ack := protocol.Ack{
 		ClientMsgID: clientMsgID,
 		MessageID:   messageID,
+		ChatID:      chatID,
 		Time:        time2,
 	}
 

@@ -178,7 +178,7 @@ func (s *Server) Authorization(c *gin.Context) {
 
 func (s *Server) Chats(c *gin.Context) {
 
-	id, ok := c.Get(userIdKey)
+	userID, ok := c.Get(userIdKey)
 	if !ok {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": errors1.ErrUserDoesntExist,
@@ -186,7 +186,7 @@ func (s *Server) Chats(c *gin.Context) {
 		return
 	}
 
-	users, err := s.service.GetUsersExcept(c.Request.Context(), id.(int))
+	users, err := s.service.GetUsersExcept(c.Request.Context(), userID.(int))
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": err.Error(),
@@ -194,7 +194,15 @@ func (s *Server) Chats(c *gin.Context) {
 		return
 	}
 
-	me, err := s.service.FindUserByID(c.Request.Context(), id.(int))
+	me, err := s.service.FindUserByID(c.Request.Context(), userID.(int))
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	groups, err := s.service.GetGroups(c.Request.Context(), userID.(int))
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": err.Error(),
@@ -203,9 +211,10 @@ func (s *Server) Chats(c *gin.Context) {
 	}
 
 	c.HTML(http.StatusOK, "users.html", gin.H{
-		"Users": users,
-		"Me":    me.Name,
-		"MyID":  me.ID,
+		"Users":  users,
+		"Groups": groups,
+		"Me":     me.Name,
+		"MyID":   me.ID,
 	})
 }
 
