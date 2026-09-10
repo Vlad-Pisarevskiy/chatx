@@ -10,7 +10,8 @@ CREATE TABLE users
 CREATE TABLE chats
 (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    label TEXT DEFAULT 'default'
+    label TEXT DEFAULT 'default',
+    type TEXT NOT NULL DEFAULT 'direct' CHECK (type IN ('direct','group'))
 );
 
 CREATE TABLE users_chats
