@@ -12,3 +12,8 @@ type UserFromDB struct {
 	Name  string
 	Login string
 }
+
+type GroupFromDB struct {
+	ID   int    `json:"group_id" db:"id"`
+	Name string `json:"group_name" db:"label"`
+}
