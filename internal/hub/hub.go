@@ -11,7 +11,11 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const nullLength = 0
+const (
+	nullLength = 0
+	StatusOffline
+	StatusOnline = 1
+)
 
 type Hub struct {
 	conns map[int]map[*Conn]struct{}
@@ -33,8 +37,9 @@ type Conn struct {
 	done   <-chan struct{}
 }
 
-func (h *Hub) Add(userID int, conn *websocket.Conn, msgChan chan protocol.Data, done <-chan struct{}) *Conn {
+func (h *Hub) Add(userID int, conn *websocket.Conn, msgChan chan protocol.Data, done <-chan struct{}) (*Conn, int) {
 
+	status := StatusOffline
 	userConn := &Conn{
 		ws:     conn,
 		ch:     msgChan,
@@ -45,13 +50,14 @@ func (h *Hub) Add(userID int, conn *websocket.Conn, msgChan chan protocol.Data, 
 	h.mu.Lock()
 
 	if h.conns[userID] == nil {
+		status = StatusOnline
 		h.conns[userID] = map[*Conn]struct{}{}
 	}
 	h.conns[userID][userConn] = struct{}{}
 
 	h.mu.Unlock()
 
-	return userConn
+	return userConn, status
 }
 
 func (h *Hub) Send(userIDs []int, message *protocol.Data) {
@@ -76,16 +82,21 @@ func (h *Hub) Send(userIDs []int, message *protocol.Data) {
 	}
 }
 
-func (h *Hub) RemoveConn(c *Conn) {
+func (h *Hub) RemoveConn(c *Conn) int {
+
+	status := StatusOnline
 
 	h.mu.Lock()
 
 	delete(h.conns[c.userID], c)
 	if len(h.conns[c.userID]) == nullLength {
+		status = StatusOffline
 		delete(h.conns, c.userID)
 	}
 
 	h.mu.Unlock()
+
+	return status
 }
 
 func (h *Hub) Close() {
@@ -108,4 +119,13 @@ func (h *Hub) Close() {
 		}
 		_ = c.ws.Close()
 	}
+}
+
+func (h *Hub) OnlineUsers() []int {
+
+	h.mu.RLock()
+	users := slices.Collect(maps.Keys(h.conns))
+	h.mu.RUnlock()
+
+	return users
 }
