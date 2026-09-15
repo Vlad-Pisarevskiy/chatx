@@ -210,11 +210,14 @@ func (s *Server) Chats(c *gin.Context) {
 		return
 	}
 
+	online := s.hub.OnlineUsers()
+
 	c.HTML(http.StatusOK, "users.html", gin.H{
-		"Users":  users,
-		"Groups": groups,
-		"Me":     me.Name,
-		"MyID":   me.ID,
+		"Users":     users,
+		"Groups":    groups,
+		"Me":        me.Name,
+		"OnlineIDs": online,
+		"MyID":      me.ID,
 	})
 }
 

@@ -39,9 +39,18 @@ func newSession(userID int, conn *websocket.Conn, hub2 *hub.Hub, service2 *servi
 
 func (s *session) handle() {
 
-	userConn := s.hub.Add(s.userID, s.conn, s.msgChan, s.ctx.Done())
+	userConn, status := s.hub.Add(s.userID, s.conn, s.msgChan, s.ctx.Done())
+	defer func() {
+		status = s.hub.RemoveConn(userConn)
+		if status == hub.StatusOffline {
+			s.sendPresence(false)
+		}
+	}()
 
-	defer s.hub.RemoveConn(userConn)
+	if status == hub.StatusOnline {
+		s.sendPresence(true)
+	}
+
 	defer s.cancel()
 	defer func(conn *websocket.Conn) {
 		_ = conn.Close()
@@ -58,6 +67,28 @@ func (s *session) handle() {
 	go s.writer()
 
 	s.reader()
+}
+
+func (s *session) sendPresence(online bool) {
+
+	presence := protocol.Presence{
+		UserID: s.userID,
+		Online: online,
+	}
+
+	payload, err := json.Marshal(presence)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	data := &protocol.Data{
+		Type:    presenceType,
+		Payload: payload,
+	}
+
+	users := s.hub.OnlineUsers()
+	s.hub.Send(users, data)
 }
 
 func (s *session) reader() {
@@ -81,7 +112,6 @@ func (s *session) readMessage() error {
 		return err
 	}
 
-	var sendMessage protocol.Send
 	var data protocol.Data
 	if err = json.Unmarshal(message, &data); err != nil {
 		log.Println(err)
@@ -89,6 +119,8 @@ func (s *session) readMessage() error {
 	}
 
 	if data.Type == sendType {
+
+		var sendMessage protocol.Send
 		if err = json.Unmarshal(data.Payload, &sendMessage); err != nil {
 			log.Println(err)
 			return nil
