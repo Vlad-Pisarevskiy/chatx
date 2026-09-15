@@ -32,6 +32,11 @@ type Ack struct {
 	Time        time.Time `json:"time"`
 }
 
+type Presence struct {
+	UserID int  `json:"user_id"`
+	Online bool `json:"online"`
+}
+
 type Error struct {
 	Code        int    `json:"code"`
 	Description string `json:"description"`
