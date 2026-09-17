@@ -63,6 +63,18 @@
   .name { font-weight: 500; }
   .login { font-size: 13px; color: #6b6867; }
 
+  /* align-self, потому что у .user выравнивание по baseline: без этого точка
+     села бы на базовую линию текста и выглядела бы съехавшей вниз. */
+  .presence {
+    align-self: center;
+    flex: none;
+    width: 8px;
+    height: 8px;
+    background: #cfcbc8;
+    border-radius: 50%;
+  }
+  .presence.online { background: #2f9e44; }
+
   .unread {
     width: 8px;
     height: 8px;
@@ -293,6 +305,11 @@
       <script>
         const myUserId = {{.MyID}};
         const myName = {{.Me}};
+
+        // Снимок «кто в сети» на момент рендера: дальше статусы приезжают кадрами
+        // presence. Пока сервер не кладёт ключ в шаблон, сюда подставится null —
+        // new Set(null) даёт пустой набор, страница не падает.
+        const onlineIds = new Set({{.OnlineIDs}});
       </script>
     </header>
   </header>
@@ -304,6 +321,7 @@
       {{range .Users}}
       <li>
         <button type="button" class="user" data-id="{{.ID}}" data-name="{{.Name}}">
+          <span class="presence" title="не в сети"></span>
           <span class="name">{{.Name}}</span>
           <span class="login">{{.Login}}</span>
           <span class="unread" hidden></span>
@@ -440,6 +458,7 @@ groupsTitleEl.hidden = groupsEl.children.length === 0;
 userNames.set(Number(myUserId), myName);
 for (const button of usersEl.querySelectorAll(".user")) {
   userNames.set(Number(button.dataset.id), button.dataset.name);
+  setPresence(button, onlineIds.has(Number(button.dataset.id)));
 }
 
 usersEl.addEventListener("click", (event) => {
@@ -515,6 +534,26 @@ function keyOf(button) {
   return button.classList.contains("group")
     ? groupKey(button.dataset.chatId)
     : userKey(button.dataset.id);
+}
+
+// --- присутствие ---
+
+function setPresence(button, online) {
+  const dot = button.querySelector(".presence");
+  // У групп точки нет: группа не бывает в сети, в сети бывают её участники.
+  if (!dot) return;
+
+  dot.classList.toggle("online", online);
+  dot.title = online ? "в сети" : "не в сети";
+}
+
+function onPresence(payload) {
+  // Кнопки может не быть: пользователь зарегистрировался уже после того, как
+  // сервер отрисовал нам список.
+  const button = usersEl.querySelector('.user[data-id="' + payload.user_id + '"]');
+  if (!button) return;
+
+  setPresence(button, Boolean(payload.online));
 }
 
 // --- чаты ---
@@ -690,6 +729,7 @@ function receive(raw) {
 
   if (frame.type === "message") onMessage(payload);
   else if (frame.type === "ack") onAck(payload);
+  else if (frame.type === "presence") onPresence(payload);
   else if (frame.type === "error") note(payload.description || "ошибка сервера");
 }
 

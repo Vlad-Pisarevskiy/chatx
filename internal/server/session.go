@@ -69,11 +69,11 @@ func (s *session) handle() {
 	s.reader()
 }
 
-func (s *session) sendPresence(online bool) {
+func (s *session) sendPresence(isOnline bool) {
 
 	presence := protocol.Presence{
 		UserID: s.userID,
-		Online: online,
+		Online: isOnline,
 	}
 
 	payload, err := json.Marshal(presence)
